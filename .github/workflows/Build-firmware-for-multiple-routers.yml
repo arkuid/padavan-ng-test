@@ -18,6 +18,17 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Debug workspace structure
+      run: |
+        echo "=== Workspace structure ==="
+        pwd
+        ls -la
+        echo "=== Patches directory ==="
+        find . -name "patches" -type d 2>/dev/null | head -5
+        if [ -d "patches" ]; then
+          find patches -type f -name "*.patch" | head -10
+        fi
+
     - name: Get variables
       run: |
         sed -i 's|\r$||g' variables build-${{ github.event.inputs.router_model }}.config
@@ -42,12 +53,20 @@ jobs:
       run: |
         ROUTER_MODEL="${{ github.event.inputs.router_model }}"
         
+        # Используем абсолютный путь к workspace
+        WORKSPACE_PATH="$GITHUB_WORKSPACE"
+        echo "Workspace: $WORKSPACE_PATH"
+        echo "Looking for patches in: $WORKSPACE_PATH/patches/$ROUTER_MODEL"
+        
         # Применяем патчи
-        if [ -d "patches" ] && [ "$(ls -A patches/$ROUTER_MODEL/*.patch 2>/dev/null)" ]; then
+        if [ -d "$WORKSPACE_PATH/patches/$ROUTER_MODEL" ] && [ "$(ls -A $WORKSPACE_PATH/patches/$ROUTER_MODEL/*.patch 2>/dev/null)" ]; then
+          echo "Found patches for $ROUTER_MODEL:"
+          ls -la "$WORKSPACE_PATH/patches/$ROUTER_MODEL/"
+          
           echo "Applying patches for $ROUTER_MODEL..."
           cd padavan-ng
-          for patch_file in ../patches/$ROUTER_MODEL/*.patch; do
-            echo "Applying patch: $(basename $patch_file)"
+          for patch_file in $WORKSPACE_PATH/patches/$ROUTER_MODEL/*.patch; do
+            echo "=== Applying patch: $(basename $patch_file) ==="
             if git apply --check "$patch_file" 2>/dev/null; then
               git apply "$patch_file"
               echo "✓ Patch applied successfully"
@@ -58,26 +77,26 @@ jobs:
           done
           cd ..
         else
-          echo "No patches found for $ROUTER_MODEL, skipping..."
+          echo "No patches found for $ROUTER_MODEL at $WORKSPACE_PATH/patches/$ROUTER_MODEL"
         fi
 
         # Копируем дополнительные файлы
-        if [ -d "routers/$ROUTER_MODEL" ] && [ "$(ls -A routers/$ROUTER_MODEL)" ]; then
+        if [ -d "$WORKSPACE_PATH/routers/$ROUTER_MODEL" ] && [ "$(ls -A $WORKSPACE_PATH/routers/$ROUTER_MODEL)" ]; then
           echo "Copying config files for $ROUTER_MODEL..."
-          cp -rv routers/$ROUTER_MODEL/* padavan-ng/trunk/configs/
+          cp -rv $WORKSPACE_PATH/routers/$ROUTER_MODEL/* padavan-ng/trunk/configs/
         else
           echo "No config files found for $ROUTER_MODEL, skipping..."
         fi
 
         # Копируем основной конфиг
-        cp build-$ROUTER_MODEL.config padavan-ng/trunk/.config
+        cp $WORKSPACE_PATH/build-$ROUTER_MODEL.config padavan-ng/trunk/.config
 
         # Копируем все дополнительные файлы из корня (если нужно)
-        if [ -f "rules" ]; then
-          cp -v rules padavan-ng/trunk/
+        if [ -f "$WORKSPACE_PATH/rules" ]; then
+          cp -v $WORKSPACE_PATH/rules padavan-ng/trunk/
         fi
-        if [ -f "Makefile" ]; then
-          cp -v Makefile padavan-ng/trunk/
+        if [ -f "$WORKSPACE_PATH/Makefile" ]; then
+          cp -v $WORKSPACE_PATH/Makefile padavan-ng/trunk/
         fi
 
         # Сборка прошивки
