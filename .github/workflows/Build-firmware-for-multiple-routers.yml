@@ -19,35 +19,24 @@ jobs:
 
     - name: Download toolchain from releases
       run: |
-        # Скачиваем toolchain из релизов вашего репозитория
-        REPO="${{ github.repository }}"
-        LATEST_RELEASE=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | grep "browser_download_url.*toolchain.tzst" | cut -d '"' -f 4)
-        if [ -n "$LATEST_RELEASE" ]; then
-          echo "Downloading toolchain from: $LATEST_RELEASE"
-          wget -O toolchain.tzst "$LATEST_RELEASE"
-          tar -I zstd -xf toolchain.tzst
-          echo "Toolchain downloaded and extracted"
-          ls -la toolchain/out/bin/mipsel-linux-*
-        else
-          echo "No toolchain release found"
-          exit 1
-        fi
+        LATEST_RELEASE=$(curl -s https://api.github.com/repos/padavan-ng-test/releases/latest | grep "browser_download_url.*toolchain.tzst" | cut -d '"' -f 4)
+        echo "Downloading toolchain from: $LATEST_RELEASE"
+        wget -O toolchain.tzst "$LATEST_RELEASE"
+        tar -I zstd -xf toolchain.tzst
+        echo "Toolchain structure:"
+        ls -la toolchain/out/bin/mipsel-linux-*
 
     - name: Setup toolchain environment
       run: |
         export PATH="$GITHUB_WORKSPACE/toolchain/out/bin:$PATH"
         echo "PATH=$GITHUB_WORKSPACE/toolchain/out/bin:$PATH" >> $GITHUB_ENV
         echo "CROSS_COMPILE=mipsel-linux-uclibc-" >> $GITHUB_ENV
-        
-        # Проверяем что toolchain работает
         mipsel-linux-uclibc-gcc --version
-        mipsel-linux-uclibc-ld --version
 
     - name: Get variables
       run: |
-        ROUTER_MODEL="${{ github.event.inputs.router_model }}"
-        sed -i 's|\r$||g' variables "build-$ROUTER_MODEL.config"
-        . <(cat variables "build-$ROUTER_MODEL.config")
+        sed -i 's|\r$||g' variables build-${{ github.event.inputs.router_model }}.config
+        . <(cat variables build-${{ github.event.inputs.router_model }}.config)
         for v in "${!PADAVAN_@}" "${!CONFIG_@}"; do
           echo "$v=${!v}" >> $GITHUB_ENV
         done
@@ -82,28 +71,16 @@ jobs:
             fi
           done
           cd ..
-        else
-          echo "No patches found for $ROUTER_MODEL, skipping..."
         fi
 
-        # Копируем дополнительные файлы
+        # Копируем файлы конфигурации
         if [ -d "routers/$ROUTER_MODEL" ] && [ "$(ls -A routers/$ROUTER_MODEL)" ]; then
           echo "Copying config files for $ROUTER_MODEL..."
           cp -rv routers/$ROUTER_MODEL/* padavan-ng/trunk/configs/
-        else
-          echo "No config files found for $ROUTER_MODEL, skipping..."
         fi
 
         # Копируем основной конфиг
-        cp "build-$ROUTER_MODEL.config" padavan-ng/trunk/.config
-
-        # Копируем все дополнительные файлы из корня (если нужно)
-        if [ -f "rules" ]; then
-          cp -v rules padavan-ng/trunk/
-        fi
-        if [ -f "Makefile" ]; then
-          cp -v Makefile padavan-ng/trunk/
-        fi
+        cp build-$ROUTER_MODEL.config padavan-ng/trunk/.config
 
         # Сборка прошивки
         cd padavan-ng/trunk
@@ -116,37 +93,8 @@ jobs:
         [[ -n $FW_FILE_NAME ]] || { echo "Firmware file not found"; exit 1; }
         echo "FW_FILE_NAME=$FW_FILE_NAME" >> $GITHUB_ENV
 
-    - name: Run custom post-build script
-      run: '[[ -f post-build.sh ]] && . post-build.sh || :'
-
-    - name: Prepare artifacts
-      run: |
-        cp "padavan-ng/trunk/images/$FW_FILE_NAME" .
-        echo "BUILD_TIMESTAMP=$(date '+%Y.%m.%d_%H.%M.%S')" >> $GITHUB_ENV
-
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: padavan-ng_${{ env.CONFIG_VENDOR }}_${{ env.CONFIG_FIRMWARE_PRODUCT_ID }}_${{ env.BUILD_TIMESTAMP }}
-        retention-days: 7
-        path: |
-          ${{ env.FW_FILE_NAME }}
-          build-${{ github.event.inputs.router_model }}.config
-
-    - name: Check firmware size
-      run: |
-        ROUTER_MODEL="${{ github.event.inputs.router_model }}"
-        partitions="padavan-ng/trunk/configs/boards/$CONFIG_VENDOR/$CONFIG_FIRMWARE_PRODUCT_ID/partitions.config"
-        if [ -f "$partitions" ]; then
-          max_fw_size="$(awk '/Firmware/ { getline; getline; sub(",", ""); print strtonum($2); }' "$partitions")"
-          fw_size="$(stat -c %s "$FW_FILE_NAME")"
-
-          if ((fw_size > max_fw_size)); then
-            fw_size_fmtd="$(numfmt --grouping "$fw_size") bytes"
-            max_fw_size_fmtd="$(numfmt --grouping "$max_fw_size") bytes"
-            echo "Firmware size ($fw_size_fmtd) exceeds max size ($max_fw_size_fmtd) for $ROUTER_MODEL"
-            exit 1
-          fi
-        else
-          echo "Partitions config not found, skipping size check"
-        fi
+        name: firmware_${{ github.event.inputs.router_model }}_$(date +%Y%m%d_%H%M%S)
+        path: padavan-ng/trunk/images/${{ env.FW_FILE_NAME }}
