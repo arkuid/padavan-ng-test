@@ -20,7 +20,7 @@ jobs:
     - name: Download toolchain from releases
       run: |
         # ИСПРАВЛЕННЫЙ URL - используем github.repository
-        REPO_URL="https://github.com/arkuid/padavan-ng-test
+        REPO_URL="https://github.com/arkuid/padavan-ng-test"
         echo "Downloading from repository: $REPO_URL"
         
         wget -O toolchain.tzst "$REPO_URL/releases/latest/download/toolchain.tzst"
