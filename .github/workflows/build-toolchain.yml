@@ -1,0 +1,79 @@
+name: Build Toolchain from padavan-ng
+
+on:
+  push:
+    branches: [ main, master ]
+    paths: [ 'toolchain/**' ]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+env:
+  TOOLCHAIN_FILE: toolchain.tzst
+  TOOLCHAIN_NAME: padavan-toolchain
+  PADAVAN_REPO: https://github.com/nilabsent/padavan-ng.git
+
+jobs:
+  build-toolchain:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+        
+    - name: Clone padavan-ng repository
+      run: |
+        git clone --depth 1 --branch master ${{ env.PADAVAN_REPO }} padavan-src
+        ls -la padavan-src/toolchain/
+        
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install --no-install-recommends -y \
+          autoconf \
+          automake \
+          bison \
+          bzip2 \
+          ca-certificates \
+          flex \
+          g++ \
+          gawk \
+          gcc \
+          git \
+          gperf \
+          help2man \
+          libncurses5-dev \
+          libstdc++6 \
+          libtool \
+          libtool-bin \
+          make \
+          patch \
+          texinfo \
+          unzip \
+          wget \
+          xz-utils \
+          zstd \
+          python3 \
+          meson \
+          ninja-build
+
+    - name: Build toolchain from padavan-ng
+      run: |
+        cd padavan-src/toolchain
+        chmod +x *.sh
+        ./clean_sources.sh
+        ./build_toolchain.sh
+        
+    - name: Create toolchain archive
+      run: |
+        tar -I "zstd -9 -T0" -cf ${{ env.TOOLCHAIN_FILE }} padavan-src/toolchain/out/
+        
+    - name: Upload toolchain as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.TOOLCHAIN_NAME }}
+        path: ${{ env.TOOLCHAIN_FILE }}
+        retention-days: 30
