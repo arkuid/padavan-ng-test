@@ -1,0 +1,134 @@
+name: Build Toolchain from padavan-ng ver 0.2
+
+on:
+  push:
+    branches: [ main, master ]
+    paths: [ 'toolchain/**' ]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+env:
+  TOOLCHAIN_FILE: toolchain.tzst
+  TOOLCHAIN_NAME: padavan-toolchain
+  PADAVAN_REPO: https://github.com/nilabsent/padavan-ng.git
+
+jobs:
+  build-toolchain:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+        
+    - name: Clone padavan-ng repository
+      run: |
+        git clone --depth 1 --branch master ${{ env.PADAVAN_REPO }} padavan-src
+        
+    - name: Cache toolchain sources
+      uses: actions/cache@v3
+      with:
+        path: |
+          padavan-src/toolchain/sources
+          padavan-src/toolchain/build
+        key: ${{ runner.os }}-toolchain-sources-${{ hashFiles('padavan-src/toolchain/build_toolchain.sh') }}
+        restore-keys: |
+          ${{ runner.os }}-toolchain-sources-
+        
+    - name: Cache compiled toolchain
+      uses: actions/cache@v3
+      with:
+        path: padavan-src/toolchain/out
+        key: ${{ runner.os }}-toolchain-bin-${{ hashFiles('padavan-src/toolchain/build_toolchain.sh') }}
+        restore-keys: |
+          ${{ runner.os }}-toolchain-bin-
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install --no-install-recommends -y \
+          autoconf \
+          automake \
+          bison \
+          bzip2 \
+          ca-certificates \
+          flex \
+          g++ \
+          gawk \
+          gcc \
+          git \
+          gperf \
+          help2man \
+          libncurses5-dev \
+          libstdc++6 \
+          libtool \
+          libtool-bin \
+          make \
+          patch \
+          texinfo \
+          unzip \
+          wget \
+          xz-utils \
+          zstd \
+          python3 \
+          meson \
+          ninja-build
+
+    - name: Build toolchain from padavan-ng
+      run: |
+        cd padavan-src/toolchain
+        chmod +x *.sh
+        ./clean_sources.sh
+        ./build_toolchain.sh
+        
+    - name: Create correct toolchain archive structure
+      run: |
+        # Создаем временную директорию с правильной структурой
+        mkdir -p temp_toolchain/toolchain
+        # Копируем out в правильное место
+        cp -r padavan-src/toolchain/out temp_toolchain/toolchain/
+        # Создаем архив с правильной структурой
+        tar -I "zstd -9 -T0" -cf ${{ env.TOOLCHAIN_FILE }} -C temp_toolchain .
+        # Проверяем структуру
+        tar -I zstd -tf ${{ env.TOOLCHAIN_FILE }} | head -10
+        
+    - name: Upload toolchain as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.TOOLCHAIN_NAME }}
+        path: ${{ env.TOOLCHAIN_FILE }}
+        retention-days: 30
+        
+    - name: Create GitHub Release
+      if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: ${{ env.TOOLCHAIN_FILE }}
+        tag_name: toolchain-$(date +'%Y%m%d-%H%M%S')
+        name: "Toolchain Build $(date +'%Y-%m-%d %H:%M:%S')"
+        body: |
+          Automatically built toolchain from padavan-ng
+          
+          **Structure:**
+          ```
+          toolchain.tzst
+          └── toolchain/
+              └── out/
+                  ├── bin/
+                  ├── lib/
+                  └── ...
+          ```
+          
+          **Usage:**
+          ```bash
+          # Extract to current directory
+          tar -I zstd -xf toolchain.tzst
+          
+          # Use in builds
+          export PATH="$PWD/toolchain/out/bin:$PATH"
+          ```
+        draft: false
+        prerelease: false
