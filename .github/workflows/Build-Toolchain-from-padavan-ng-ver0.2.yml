@@ -102,15 +102,25 @@ jobs:
         path: ${{ env.TOOLCHAIN_FILE }}
         retention-days: 30
         
+    - name: Generate release tag and name
+      if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+      id: vars
+      run: |
+        CURRENT_DATE=$(date +'%Y%m%d-%H%M%S')
+        echo "tag_name=toolchain-$CURRENT_DATE" >> $GITHUB_OUTPUT
+        echo "release_name=Toolchain Build $CURRENT_DATE" >> $GITHUB_OUTPUT
+        
     - name: Create GitHub Release
       if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
       with:
         files: ${{ env.TOOLCHAIN_FILE }}
-        tag_name: toolchain-$(date +'%Y%m%d-%H%M%S')
-        name: "Toolchain Build $(date +'%Y-%m-%d %H:%M:%S')"
+        tag_name: ${{ steps.vars.outputs.tag_name }}
+        name: ${{ steps.vars.outputs.release_name }}
         body: |
           Automatically built toolchain from padavan-ng
+          
+          **Source Repository:** https://github.com/nilabsent/padavan-ng
           
           **Structure:**
           ```
@@ -129,6 +139,7 @@ jobs:
           
           # Use in builds
           export PATH="$PWD/toolchain/out/bin:$PATH"
+          export CROSS_COMPILE="mipsel-linux-uclibc-"
           ```
         draft: false
         prerelease: false
