@@ -17,6 +17,35 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Install build dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          autoconf \
+          automake \
+          libtool \
+          pkg-config \
+          flex \
+          bison \
+          gettext \
+          texinfo \
+          gperf \
+          libncurses5-dev \
+          lib32z1-dev \
+          python3 \
+          meson \
+          ninja-build \
+          cmake \
+          make \
+          gcc \
+          g++ \
+          git \
+          wget \
+          curl \
+          unzip \
+          xz-utils \
+          zstd
+
     - name: Clone nilabsent/padavan-ng repository
       run: |
         git config --global --add safe.directory '*'
