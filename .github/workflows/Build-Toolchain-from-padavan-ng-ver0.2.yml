@@ -1,9 +1,6 @@
 name: Build Toolchain from padavan-ng ver 0.2
 
 on:
-  push:
-    branches: [ main, master ]
-    paths: [ 'toolchain/**' ]
   workflow_dispatch:
   schedule:
     - cron: '0 0 * * 0'
@@ -17,6 +14,8 @@ jobs:
   build-toolchain:
     runs-on: ubuntu-22.04
     timeout-minutes: 120
+    permissions:
+      contents: write  # Важно: даем права на запись содержимого
     
     steps:
     - name: Checkout repository
@@ -28,54 +27,14 @@ jobs:
       run: |
         git clone --depth 1 --branch master ${{ env.PADAVAN_REPO }} padavan-src
         
-    - name: Cache toolchain sources
-      uses: actions/cache@v3
-      with:
-        path: |
-          padavan-src/toolchain/sources
-          padavan-src/toolchain/build
-        key: ${{ runner.os }}-toolchain-sources-${{ hashFiles('padavan-src/toolchain/build_toolchain.sh') }}
-        restore-keys: |
-          ${{ runner.os }}-toolchain-sources-
-        
-    - name: Cache compiled toolchain
-      uses: actions/cache@v3
-      with:
-        path: padavan-src/toolchain/out
-        key: ${{ runner.os }}-toolchain-bin-${{ hashFiles('padavan-src/toolchain/build_toolchain.sh') }}
-        restore-keys: |
-          ${{ runner.os }}-toolchain-bin-
-
     - name: Install dependencies
       run: |
         sudo apt-get update
         sudo apt-get install --no-install-recommends -y \
-          autoconf \
-          automake \
-          bison \
-          bzip2 \
-          ca-certificates \
-          flex \
-          g++ \
-          gawk \
-          gcc \
-          git \
-          gperf \
-          help2man \
-          libncurses5-dev \
-          libstdc++6 \
-          libtool \
-          libtool-bin \
-          make \
-          patch \
-          texinfo \
-          unzip \
-          wget \
-          xz-utils \
-          zstd \
-          python3 \
-          meson \
-          ninja-build
+          autoconf automake bison bzip2 ca-certificates flex g++ \
+          gawk gcc git gperf help2man libncurses5-dev libstdc++6 \
+          libtool libtool-bin make patch texinfo unzip wget xz-utils \
+          zstd python3 meson ninja-build
 
     - name: Build toolchain from padavan-ng
       run: |
@@ -84,16 +43,13 @@ jobs:
         ./clean_sources.sh
         ./build_toolchain.sh
         
-    - name: Create correct toolchain archive structure
+    - name: Create toolchain archive
       run: |
-        # Создаем временную директорию с правильной структурой
         mkdir -p temp_toolchain/toolchain
-        # Копируем out в правильное место
         cp -r padavan-src/toolchain/out temp_toolchain/toolchain/
-        # Создаем архив с правильной структурой
         tar -I "zstd -9 -T0" -cf ${{ env.TOOLCHAIN_FILE }} -C temp_toolchain .
-        # Проверяем структуру
-        tar -I zstd -tf ${{ env.TOOLCHAIN_FILE }} | head -10
+        echo "Archive created: ${{ env.TOOLCHAIN_FILE }}"
+        ls -lh ${{ env.TOOLCHAIN_FILE }}
         
     - name: Upload toolchain as artifact
       uses: actions/upload-artifact@v4
@@ -103,7 +59,6 @@ jobs:
         retention-days: 30
         
     - name: Generate release tag and name
-      if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
       id: vars
       run: |
         CURRENT_DATE=$(date +'%Y%m%d-%H%M%S')
@@ -111,35 +66,22 @@ jobs:
         echo "release_name=Toolchain Build $CURRENT_DATE" >> $GITHUB_OUTPUT
         
     - name: Create GitHub Release
-      if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
-      uses: softprops/action-gh-release@v1
+      uses: ncipollo/release-action@v1
       with:
-        files: ${{ env.TOOLCHAIN_FILE }}
-        tag_name: ${{ steps.vars.outputs.tag_name }}
+        artifacts: ${{ env.TOOLCHAIN_FILE }}
+        tag: ${{ steps.vars.outputs.tag_name }}
         name: ${{ steps.vars.outputs.release_name }}
         body: |
-          Automatically built toolchain from padavan-ng
+          Automatically built toolchain from nilabsent/padavan-ng
           
-          **Source Repository:** https://github.com/nilabsent/padavan-ng
-          
-          **Structure:**
-          ```
-          toolchain.tzst
-          └── toolchain/
-              └── out/
-                  ├── bin/
-                  ├── lib/
-                  └── ...
-          ```
+          **Source:** ${{ env.PADAVAN_REPO }}
+          **Build Date:** ${{ steps.vars.outputs.release_name }}
           
           **Usage:**
           ```bash
-          # Extract to current directory
           tar -I zstd -xf toolchain.tzst
-          
-          # Use in builds
           export PATH="$PWD/toolchain/out/bin:$PATH"
-          export CROSS_COMPILE="mipsel-linux-uclibc-"
+          mipsel-linux-uclibc-gcc --version
           ```
         draft: false
         prerelease: false
