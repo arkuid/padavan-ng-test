@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 120
     permissions:
-      contents: write  # Важно: даем права на запись содержимого
+      contents: write
     
     steps:
     - name: Checkout repository
@@ -47,9 +47,11 @@ jobs:
       run: |
         mkdir -p temp_toolchain/toolchain
         cp -r padavan-src/toolchain/out temp_toolchain/toolchain/
-        tar -I "zstd -9 -T0" -cf ${{ env.TOOLCHAIN_FILE }} -C temp_toolchain .
+        # ИСПРАВЛЕНО: архивируем только папку toolchain, без точки
+        tar -I "zstd -9 -T0" -cf ${{ env.TOOLCHAIN_FILE }} -C temp_toolchain toolchain
         echo "Archive created: ${{ env.TOOLCHAIN_FILE }}"
-        ls -lh ${{ env.TOOLCHAIN_FILE }}
+        echo "Archive structure:"
+        tar -I zstd -tf ${{ env.TOOLCHAIN_FILE }} | head -10
         
     - name: Upload toolchain as artifact
       uses: actions/upload-artifact@v4
@@ -77,10 +79,26 @@ jobs:
           **Source:** ${{ env.PADAVAN_REPO }}
           **Build Date:** ${{ steps.vars.outputs.release_name }}
           
+          **Archive Structure:**
+          ```
+          toolchain.tzst
+          └── toolchain/
+              └── out/
+                  ├── bin/
+                  ├── lib/
+                  └── ...
+          ```
+          
           **Usage:**
           ```bash
+          # Extract to current directory
           tar -I zstd -xf toolchain.tzst
+          
+          # Use in builds
           export PATH="$PWD/toolchain/out/bin:$PATH"
+          export CROSS_COMPILE="mipsel-linux-uclibc-"
+          
+          # Verify
           mipsel-linux-uclibc-gcc --version
           ```
         draft: false
