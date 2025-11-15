@@ -19,9 +19,11 @@ jobs:
 
     - name: Download toolchain from releases
       run: |
-        LATEST_RELEASE=$(curl -s https://api.github.com/repos/padavan-ng-test/releases/latest | grep "browser_download_url.*toolchain.tzst" | cut -d '"' -f 4)
-        echo "Downloading toolchain from: $LATEST_RELEASE"
-        wget -O toolchain.tzst "$LATEST_RELEASE"
+        # ИСПРАВЛЕННЫЙ URL - используем github.repository
+        REPO_URL="https://github.com/arkuid/padavan-ng-test
+        echo "Downloading from repository: $REPO_URL"
+        
+        wget -O toolchain.tzst "$REPO_URL/releases/latest/download/toolchain.tzst"
         tar -I zstd -xf toolchain.tzst
         echo "Toolchain structure:"
         ls -la toolchain/out/bin/mipsel-linux-*
@@ -49,26 +51,17 @@ jobs:
           git -C padavan-ng checkout "$PADAVAN_COMMIT"
         fi
 
-    - name: Run custom pre-build script
-      run: '[[ -f pre-build.sh ]] && . pre-build.sh || :'
-
     - name: Build firmware
       run: |
         ROUTER_MODEL="${{ github.event.inputs.router_model }}"
         
         # Применяем патчи
-        if [ -d "patches" ] && [ -d "patches/$ROUTER_MODEL" ] && [ "$(ls -A patches/$ROUTER_MODEL/*.patch 2>/dev/null)" ]; then
+        if [ -d "patches/$ROUTER_MODEL" ] && [ "$(ls -A patches/$ROUTER_MODEL/*.patch 2>/dev/null)" ]; then
           echo "Applying patches for $ROUTER_MODEL..."
           cd padavan-ng
           for patch_file in ../patches/$ROUTER_MODEL/*.patch; do
             echo "Applying patch: $(basename $patch_file)"
-            if git apply --check "$patch_file" 2>/dev/null; then
-              git apply "$patch_file"
-              echo "✓ Patch applied successfully"
-            else
-              echo "⚠ Applying patch with skip: $(basename $patch_file)"
-              patch -p1 --forward < "$patch_file" || true
-            fi
+            patch -p1 --forward < "$patch_file" || true
           done
           cd ..
         fi
@@ -88,13 +81,12 @@ jobs:
         ./build_firmware.sh
 
         # Поиск файла прошивки
-        FW_FILE_NAME="$(find images -type f -regextype posix-extended -iregex ".*\.(trx|bin)$" \
-                        -printf "%T@\t%f\n" | sort -V | tail -1 | cut -f2)"
+        FW_FILE_NAME="$(find images -type f -name "*.trx" -o -name "*.bin" | head -1)"
         [[ -n $FW_FILE_NAME ]] || { echo "Firmware file not found"; exit 1; }
-        echo "FW_FILE_NAME=$FW_FILE_NAME" >> $GITHUB_ENV
+        echo "FW_FILE_NAME=$(basename $FW_FILE_NAME)" >> $GITHUB_ENV
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: firmware_${{ github.event.inputs.router_model }}_$(date +%Y%m%d_%H%M%S)
+        name: firmware_${{ github.event.inputs.router_model }}
         path: padavan-ng/trunk/images/${{ env.FW_FILE_NAME }}
