@@ -20,7 +20,8 @@ jobs:
     - name: Download toolchain from releases
       run: |
         # Скачиваем toolchain из релизов вашего репозитория
-        LATEST_RELEASE=$(curl -s https://api.github.com/repos/${{ github.repository }}/releases/latest | grep "browser_download_url.*toolchain.tzst" | cut -d '"' -f 4)
+        REPO="${{ github.repository }}"
+        LATEST_RELEASE=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | grep "browser_download_url.*toolchain.tzst" | cut -d '"' -f 4)
         if [ -n "$LATEST_RELEASE" ]; then
           echo "Downloading toolchain from: $LATEST_RELEASE"
           wget -O toolchain.tzst "$LATEST_RELEASE"
@@ -44,8 +45,9 @@ jobs:
 
     - name: Get variables
       run: |
-        sed -i 's|\r$||g' variables build-${{ github.event.inputs.router_model }}.config
-        . <(cat variables build-${{ github.event.inputs.router_model }}.config)
+        ROUTER_MODEL="${{ github.event.inputs.router_model }}"
+        sed -i 's|\r$||g' variables "build-$ROUTER_MODEL.config"
+        . <(cat variables "build-$ROUTER_MODEL.config")
         for v in "${!PADAVAN_@}" "${!CONFIG_@}"; do
           echo "$v=${!v}" >> $GITHUB_ENV
         done
@@ -93,7 +95,7 @@ jobs:
         fi
 
         # Копируем основной конфиг
-        cp build-$ROUTER_MODEL.config padavan-ng/trunk/.config
+        cp "build-$ROUTER_MODEL.config" padavan-ng/trunk/.config
 
         # Копируем все дополнительные файлы из корня (если нужно)
         if [ -f "rules" ]; then
