@@ -52,94 +52,46 @@ jobs:
     - name: Build firmware
       run: |
         ROUTER_MODEL="${{ github.event.inputs.router_model }}"
+        
+        # Используем абсолютный путь к workspace
         WORKSPACE_PATH="$GITHUB_WORKSPACE"
-        
-        echo "=== FIRMWARE BUILD STARTED ==="
-        echo "Router: $ROUTER_MODEL"
         echo "Workspace: $WORKSPACE_PATH"
-
-        # ========== ОТЛАДКА ПАТЧЕЙ ==========
-        echo "=== DEBUG PATCHES ==="
-        echo "Patches directory exists: $(if [ -d "$WORKSPACE_PATH/patches/$ROUTER_MODEL" ]; then echo "YES"; else echo "NO"; fi)"
+        echo "Looking for patches in: $WORKSPACE_PATH/patches/$ROUTER_MODEL"
         
-        if [ -d "$WORKSPACE_PATH/patches/$ROUTER_MODEL" ]; then
-          echo "Patch files found:"
-          ls -la "$WORKSPACE_PATH/patches/$ROUTER_MODEL/" || echo "No patch files"
-          
-          # Проверяем содержимое патчей
-          for patch_file in $WORKSPACE_PATH/patches/$ROUTER_MODEL/*.patch; do
-            echo "=== Patch content: $(basename $patch_file) ==="
-            head -30 "$patch_file"
-            echo "..."
-          done
-        fi
-
-        # ========== ПРИМЕНЕНИЕ ПАТЧЕЙ ==========
+        # Применяем патчи
         if [ -d "$WORKSPACE_PATH/patches/$ROUTER_MODEL" ] && [ "$(ls -A $WORKSPACE_PATH/patches/$ROUTER_MODEL/*.patch 2>/dev/null)" ]; then
-          echo "=== APPLYING PATCHES ==="
+          echo "Found patches for $ROUTER_MODEL:"
+          ls -la "$WORKSPACE_PATH/patches/$ROUTER_MODEL/"
+          
+          echo "Applying patches for $ROUTER_MODEL..."
           cd padavan-ng
-          
-          # Сохраняем исходное состояние
-          echo "Initial git status:"
-          git status --porcelain | head -10 || echo "No changes"
-          
           for patch_file in $WORKSPACE_PATH/patches/$ROUTER_MODEL/*.patch; do
-            echo "--- Applying: $(basename $patch_file) ---"
-            
-            # Показываем что патч меняет
-            echo "Patch will modify:"
-            grep -E "^--- a/|^+++ b/" "$patch_file" | head -5
-            
-            # Пробуем применить через git
+            echo "=== Applying patch: $(basename $patch_file) ==="
             if git apply --check "$patch_file" 2>/dev/null; then
               git apply "$patch_file"
-              echo "✓ Git apply successful"
+              echo "✓ Patch applied successfully"
             else
-              echo "⚠ Git apply failed, trying patch command..."
-              # Применяем с максимальной терпимостью
-              if patch -p1 --forward --ignore-whitespace --silent < "$patch_file"; then
-                echo "✓ Patch command successful"
-              else
-                echo "❌ Patch application failed"
-                echo "Showing patch content for debugging:"
-                cat "$patch_file"
-              fi
+              echo "⚠ Applying patch with skip: $(basename $patch_file)"
+              patch -p1 --forward < "$patch_file" || true
             fi
           done
-          
-          # Проверяем изменения
-          echo "Final git status:"
-          git status --porcelain | head -10 || echo "No changes detected"
-          
-          # Проверяем конкретно mktplinkfw2
-          echo "=== VERIFYING MKTPLINKFW2 ==="
-          if [ -f "trunk/tools/mktplinkfw2.c" ]; then
-            echo "mktplinkfw2.c size check:"
-            grep -A2 -B2 "kernel_size + rootfs_size" trunk/tools/mktplinkfw2.c || echo "Size check not found"
-            
-            echo "mktplinkfw2 error message:"
-            grep -A2 -B2 "images are too big" trunk/tools/mktplinkfw2.c || echo "Error message not found"
-          fi
-          
           cd ..
         else
-          echo "=== NO PATCHES FOUND ==="
+          echo "No patches found for $ROUTER_MODEL at $WORKSPACE_PATH/patches/$ROUTER_MODEL"
         fi
 
-        # ========== КОПИРОВАНИЕ КОНФИГУРАЦИЙ ==========
-        echo "=== COPYING CONFIGURATIONS ==="
+        # Копируем дополнительные файлы
         if [ -d "$WORKSPACE_PATH/routers/$ROUTER_MODEL" ] && [ "$(ls -A $WORKSPACE_PATH/routers/$ROUTER_MODEL)" ]; then
           echo "Copying config files for $ROUTER_MODEL..."
           cp -rv $WORKSPACE_PATH/routers/$ROUTER_MODEL/* padavan-ng/trunk/configs/
         else
-          echo "No config files found for $ROUTER_MODEL"
+          echo "No config files found for $ROUTER_MODEL, skipping..."
         fi
 
         # Копируем основной конфиг
-        echo "Copying main config..."
         cp $WORKSPACE_PATH/build-$ROUTER_MODEL.config padavan-ng/trunk/.config
 
-        # Дополнительные файлы
+        # Копируем все дополнительные файлы из корня (если нужно)
         if [ -f "$WORKSPACE_PATH/rules" ]; then
           cp -v $WORKSPACE_PATH/rules padavan-ng/trunk/
         fi
@@ -147,28 +99,16 @@ jobs:
           cp -v $WORKSPACE_PATH/Makefile padavan-ng/trunk/
         fi
 
-        # ========== СБОРКА ПРОШИВКИ ==========
-        echo "=== BUILDING FIRMWARE ==="
+        # Сборка прошивки
         cd padavan-ng/trunk
-        
-        # Очистка и сборка
         ./clear_tree.sh
         ./build_firmware.sh
 
-        # ========== ПОИСК РЕЗУЛЬТАТА ==========
-        echo "=== FINDING FIRMWARE ==="
+        # Поиск файла прошивки
         FW_FILE_NAME="$(find images -type f -regextype posix-extended -iregex ".*\.(trx|bin)$" \
                         -printf "%T@\t%f\n" | sort -V | tail -1 | cut -f2)"
-        
-        if [[ -n $FW_FILE_NAME ]]; then
-          echo "✓ Firmware found: $FW_FILE_NAME"
-          echo "FW_FILE_NAME=$FW_FILE_NAME" >> $GITHUB_ENV
-        else
-          echo "❌ Firmware file not found"
-          echo "Available files in images/:"
-          find images -type f -ls 2>/dev/null || ls -la images/ 2>/dev/null || echo "Images directory not found"
-          exit 1
-        fi
+        [[ -n $FW_FILE_NAME ]] || { echo "Firmware file not found"; exit 1; }
+        echo "FW_FILE_NAME=$FW_FILE_NAME" >> $GITHUB_ENV
 
     - name: Prepare artifacts
       run: |
