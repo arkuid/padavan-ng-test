@@ -17,22 +17,33 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Download toolchain from releases
+    - name: Clone nilabsent/padavan-ng repository
       run: |
-        # ИСПРАВЛЕННЫЙ URL - используем github.repository
-        REPO_URL="https://github.com/arkuid/padavan-ng-test"
-        echo "Downloading from repository: $REPO_URL"
-        
-        wget -O toolchain.tzst "$REPO_URL/releases/latest/download/toolchain.tzst"
-        tar -I zstd -xf toolchain.tzst
-        echo "Toolchain structure:"
-        ls -la toolchain/out/bin/mipsel-linux-*
+        git config --global --add safe.directory '*'
+        git clone --depth 1 -b master "https://github.com/nilabsent/padavan-ng.git"
 
-    - name: Setup toolchain environment
+    - name: Download and setup toolchain
       run: |
-        export PATH="$GITHUB_WORKSPACE/toolchain/out/bin:$PATH"
-        echo "PATH=$GITHUB_WORKSPACE/toolchain/out/bin:$PATH" >> $GITHUB_ENV
+        REPO_URL="https://github.com/${{ github.repository }}"
+        echo "Downloading toolchain from: $REPO_URL"
+        
+        # Скачиваем toolchain
+        wget -O toolchain.tzst "$REPO_URL/releases/latest/download/toolchain.tzst"
+        
+        # Распаковываем в padavan-ng (как ожидает оригинальный скрипт)
+        tar -I zstd -xf toolchain.tzst -C padavan-ng/
+        
+        echo "✓ Toolchain verification:"
+        ls -la padavan-ng/toolchain/out/bin/mipsel-linux-uclibc-gcc
+
+    - name: Setup environment
+      run: |
+        # Настраиваем PATH для toolchain
+        export PATH="$GITHUB_WORKSPACE/padavan-ng/toolchain/out/bin:$PATH"
+        echo "PATH=$GITHUB_WORKSPACE/padavan-ng/toolchain/out/bin:$PATH" >> $GITHUB_ENV
         echo "CROSS_COMPILE=mipsel-linux-uclibc-" >> $GITHUB_ENV
+        
+        # Проверяем что toolchain работает
         mipsel-linux-uclibc-gcc --version
 
     - name: Get variables
@@ -42,14 +53,6 @@ jobs:
         for v in "${!PADAVAN_@}" "${!CONFIG_@}"; do
           echo "$v=${!v}" >> $GITHUB_ENV
         done
-
-    - name: Clone nilabsent/padavan-ng repository
-      run: |
-        git config --global --add safe.directory '*'
-        git clone --depth 1 -b "$PADAVAN_BRANCH" "$PADAVAN_REPO"
-        if [ "$PADAVAN_COMMIT" != "HEAD" ]; then
-          git -C padavan-ng checkout "$PADAVAN_COMMIT"
-        fi
 
     - name: Build firmware
       run: |
