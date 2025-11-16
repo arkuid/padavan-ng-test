@@ -1,13 +1,9 @@
-name: Build Toolchain from padavan-ng
+name: Build Toolchain from padavan-ng ver 0.1
 
 on:
   push:
     branches: [ main, master ]
     paths: [ 'toolchain/**' ]
-  workflow_dispatch:
-  schedule:
-    - cron: '0 0 * * 0'
-
 env:
   TOOLCHAIN_FILE: toolchain.tzst
   TOOLCHAIN_NAME: padavan-toolchain
