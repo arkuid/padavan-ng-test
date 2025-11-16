@@ -76,8 +76,8 @@ jobs:
         
     - name: Install dependencies
       run: |
-        apt update
-        apt install --no-install-recommends -y \
+        sudo apt update
+        sudo apt install --no-install-recommends -y \
             autoconf \
             automake \
             bison \
