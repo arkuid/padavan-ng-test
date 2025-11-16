@@ -1,9 +1,9 @@
-name: Build Toolchain from padavan-ng ver 0.2
+name: Build Toolchain from padavan-ng 
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 0 * * 0'
+    - cron: '0 0 1 * *' 
 
 env:
   TOOLCHAIN_FILE: toolchain.tzst
@@ -11,30 +11,96 @@ env:
   PADAVAN_REPO: https://github.com/nilabsent/padavan-ng.git
 
 jobs:
+  check-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      should-build: ${{ steps.check.outputs.should-build }}
+      release-tag: ${{ steps.check.outputs.release-tag }}
+    steps:
+    - name: Check for changes in padavan-ng repository
+      id: check
+      run: |
+        # Get latest release from OUR repository
+        LATEST_RELEASE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/${{ github.repository }}/releases/latest" || echo '{}')
+        LATEST_RELEASE_DATE=$(echo "$LATEST_RELEASE" | jq -r '.published_at // .created_at // ""')
+        
+        # Get last commit date from padavan-ng repository with authentication
+        PADAVAN_RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/nilabsent/padavan-ng/commits?path=toolchain&per_page=1")
+        
+        # Check if we got a valid response
+        if echo "$PADAVAN_RESPONSE" | jq -e '.[0]' > /dev/null 2>&1; then
+          PADAVAN_LAST_COMMIT=$(echo "$PADAVAN_RESPONSE" | jq -r '.[0].commit.committer.date')
+          echo "Last padavan-ng commit date: $PADAVAN_LAST_COMMIT"
+        else
+          echo "Error accessing padavan-ng repository, building anyway"
+          echo "should-build=true" >> $GITHUB_OUTPUT
+          RELEASE_TAG="toolchain-$(date +'%Y%m%d-%H%M%S')"
+          echo "release-tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+        
+        echo "Latest release date: $LATEST_RELEASE_DATE"
+        
+        # If no previous release, build anyway
+        if [ -z "$LATEST_RELEASE_DATE" ]; then
+          echo "No previous release found. Should build."
+          echo "should-build=true" >> $GITHUB_OUTPUT
+          RELEASE_TAG="toolchain-$(date +'%Y%m%d-%H%M%S')"
+          echo "release-tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
+        # Compare dates - build if padavan has newer commits
+        elif [ "$(date -d "$PADAVAN_LAST_COMMIT" +%s)" -gt "$(date -d "$LATEST_RELEASE_DATE" +%s)" ]; then
+          echo "Changes detected in padavan-ng. Should build."
+          echo "should-build=true" >> $GITHUB_OUTPUT
+          RELEASE_TAG="toolchain-$(date +'%Y%m%d-%H%M%S')"
+          echo "release-tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
+        else
+          echo "No changes detected in padavan-ng. Skipping build."
+          echo "should-build=false" >> $GITHUB_OUTPUT
+          echo "release-tag=" >> $GITHUB_OUTPUT
+        fi
+
   build-toolchain:
     runs-on: ubuntu-22.04
+    needs: check-changes
+    if: needs.check-changes.outputs.should-build == 'true'
     timeout-minutes: 120
     permissions:
       contents: write
     
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 1
-        
     - name: Clone padavan-ng repository
       run: |
         git clone --depth 1 --branch master ${{ env.PADAVAN_REPO }} padavan-src
         
     - name: Install dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install --no-install-recommends -y \
-          autoconf automake bison bzip2 ca-certificates flex g++ \
-          gawk gcc git gperf help2man libncurses5-dev libstdc++6 \
-          libtool libtool-bin make patch texinfo unzip wget xz-utils \
-          zstd python3 meson ninja-build
+        apt update
+        apt install --no-install-recommends -y \
+            autoconf \
+            automake \
+            bison \
+            bzip2 \
+            ca-certificates \
+            flex \
+            g++ \
+            gawk \
+            gcc \
+            git \
+            gperf \
+            help2man \
+            libncurses5-dev \
+            libstdc++6 \
+            libtool \
+            libtool-bin \
+            make \
+            patch \
+            texinfo \
+            unzip \
+            wget \
+            xz-utils \
+            zstd
 
     - name: Build toolchain from padavan-ng
       run: |
@@ -47,11 +113,8 @@ jobs:
       run: |
         mkdir -p temp_toolchain/toolchain
         cp -r padavan-src/toolchain/out temp_toolchain/toolchain/
-        # ИСПРАВЛЕНО: архивируем только папку toolchain, без точки
         tar -I "zstd -9 -T0" -cf ${{ env.TOOLCHAIN_FILE }} -C temp_toolchain toolchain
         echo "Archive created: ${{ env.TOOLCHAIN_FILE }}"
-        echo "Archive structure:"
-        tar -I zstd -tf ${{ env.TOOLCHAIN_FILE }} | head -10
         
     - name: Upload toolchain as artifact
       uses: actions/upload-artifact@v4
@@ -60,46 +123,18 @@ jobs:
         path: ${{ env.TOOLCHAIN_FILE }}
         retention-days: 30
         
-    - name: Generate release tag and name
-      id: vars
-      run: |
-        CURRENT_DATE=$(date +'%Y%m%d-%H%M%S')
-        echo "tag_name=toolchain-$CURRENT_DATE" >> $GITHUB_OUTPUT
-        echo "release_name=Toolchain Build $CURRENT_DATE" >> $GITHUB_OUTPUT
-        
     - name: Create GitHub Release
       uses: ncipollo/release-action@v1
       with:
         artifacts: ${{ env.TOOLCHAIN_FILE }}
-        tag: ${{ steps.vars.outputs.tag_name }}
-        name: ${{ steps.vars.outputs.release_name }}
+        tag: ${{ needs.check-changes.outputs.release-tag }}
+        name: Toolchain ${{ needs.check-changes.outputs.release-tag }}
         body: |
           Automatically built toolchain from nilabsent/padavan-ng
           
           **Source:** ${{ env.PADAVAN_REPO }}
-          **Build Date:** ${{ steps.vars.outputs.release_name }}
+          **Build Date:** ${{ needs.check-changes.outputs.release-tag }}
           
-          **Archive Structure:**
-          ```
-          toolchain.tzst
-          └── toolchain/
-              └── out/
-                  ├── bin/
-                  ├── lib/
-                  └── ...
-          ```
-          
-          **Usage:**
-          ```bash
-          # Extract to current directory
-          tar -I zstd -xf toolchain.tzst
-          
-          # Use in builds
-          export PATH="$PWD/toolchain/out/bin:$PATH"
-          export CROSS_COMPILE="mipsel-linux-uclibc-"
-          
-          # Verify
-          mipsel-linux-uclibc-gcc --version
-          ```
+          Built from latest padavan-ng repository changes.
         draft: false
         prerelease: false
