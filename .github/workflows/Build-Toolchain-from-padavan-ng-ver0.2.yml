@@ -16,6 +16,7 @@ jobs:
     outputs:
       should-build: ${{ steps.check.outputs.should-build }}
       release-tag: ${{ steps.check.outputs.release-tag }}
+      commit-date: ${{ steps.check.outputs.commit-date }}
     steps:
     - name: Check for changes in padavan-ng repository
       id: check
@@ -32,12 +33,23 @@ jobs:
         # Check if we got a valid response
         if echo "$PADAVAN_RESPONSE" | jq -e '.[0]' > /dev/null 2>&1; then
           PADAVAN_LAST_COMMIT=$(echo "$PADAVAN_RESPONSE" | jq -r '.[0].commit.committer.date')
+          PADAVAN_COMMIT_SHA=$(echo "$PADAVAN_RESPONSE" | jq -r '.[0].sha')
           echo "Last padavan-ng commit date: $PADAVAN_LAST_COMMIT"
+          echo "Last padavan-ng commit SHA: $PADAVAN_COMMIT_SHA"
+          
+          # Format date for release tag (YYYYMMDD format)
+          COMMIT_DATE_FORMATTED=$(date -d "$PADAVAN_LAST_COMMIT" +'%Y%m%d')
+          echo "commit-date=$COMMIT_DATE_FORMATTED" >> $GITHUB_OUTPUT
+          
+          # Create release tag based on commit date and short SHA
+          RELEASE_TAG="toolchain-${COMMIT_DATE_FORMATTED}-${PADAVAN_COMMIT_SHA:0:8}"
+          echo "release-tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
         else
           echo "Error accessing padavan-ng repository, building anyway"
           echo "should-build=true" >> $GITHUB_OUTPUT
           RELEASE_TAG="toolchain-$(date +'%Y%m%d-%H%M%S')"
           echo "release-tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
+          echo "commit-date=$(date +'%Y%m%d')" >> $GITHUB_OUTPUT
           exit 0
         fi
         
@@ -47,18 +59,13 @@ jobs:
         if [ -z "$LATEST_RELEASE_DATE" ]; then
           echo "No previous release found. Should build."
           echo "should-build=true" >> $GITHUB_OUTPUT
-          RELEASE_TAG="toolchain-$(date +'%Y%m%d-%H%M%S')"
-          echo "release-tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
         # Compare dates - build if padavan has newer commits
         elif [ "$(date -d "$PADAVAN_LAST_COMMIT" +%s)" -gt "$(date -d "$LATEST_RELEASE_DATE" +%s)" ]; then
           echo "Changes detected in padavan-ng. Should build."
           echo "should-build=true" >> $GITHUB_OUTPUT
-          RELEASE_TAG="toolchain-$(date +'%Y%m%d-%H%M%S')"
-          echo "release-tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
         else
           echo "No changes detected in padavan-ng. Skipping build."
           echo "should-build=false" >> $GITHUB_OUTPUT
-          echo "release-tag=" >> $GITHUB_OUTPUT
         fi
 
   build-toolchain:
@@ -128,12 +135,13 @@ jobs:
       with:
         artifacts: ${{ env.TOOLCHAIN_FILE }}
         tag: ${{ needs.check-changes.outputs.release-tag }}
-        name: Toolchain ${{ needs.check-changes.outputs.release-tag }}
+        name: Toolchain ${{ needs.check-changes.outputs.commit-date }}
         body: |
           Automatically built toolchain from nilabsent/padavan-ng
           
           **Source:** ${{ env.PADAVAN_REPO }}
-          **Build Date:** ${{ needs.check-changes.outputs.release-tag }}
+          **Build Date:** $(date +'%Y-%m-%d %H:%M:%S')
+          **Based on padavan-ng commit:** ${{ needs.check-changes.outputs.release-tag }}
           
           Built from latest padavan-ng repository changes.
         draft: false
