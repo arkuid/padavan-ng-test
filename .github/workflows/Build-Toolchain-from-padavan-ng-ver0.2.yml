@@ -17,6 +17,7 @@ jobs:
       should-build: ${{ steps.check.outputs.should-build }}
       release-tag: ${{ steps.check.outputs.release-tag }}
       commit-date: ${{ steps.check.outputs.commit-date }}
+      commit-sha: ${{ steps.check.outputs.commit-sha }}
     steps:
     - name: Check for changes in padavan-ng repository
       id: check
@@ -40,6 +41,7 @@ jobs:
           # Format date for release tag (YYYYMMDD format)
           COMMIT_DATE_FORMATTED=$(date -d "$PADAVAN_LAST_COMMIT" +'%Y%m%d')
           echo "commit-date=$COMMIT_DATE_FORMATTED" >> $GITHUB_OUTPUT
+          echo "commit-sha=$PADAVAN_COMMIT_SHA" >> $GITHUB_OUTPUT
           
           # Create release tag based on commit date and short SHA
           RELEASE_TAG="toolchain-${COMMIT_DATE_FORMATTED}-${PADAVAN_COMMIT_SHA:0:8}"
@@ -50,6 +52,7 @@ jobs:
           RELEASE_TAG="toolchain-$(date +'%Y%m%d-%H%M%S')"
           echo "release-tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
           echo "commit-date=$(date +'%Y%m%d')" >> $GITHUB_OUTPUT
+          echo "commit-sha=unknown" >> $GITHUB_OUTPUT
           exit 0
         fi
         
@@ -129,6 +132,12 @@ jobs:
         name: ${{ env.TOOLCHAIN_NAME }}
         path: ${{ env.TOOLCHAIN_FILE }}
         retention-days: 30
+
+    - name: Get current date for release body
+      id: date
+      run: |
+        CURRENT_DATE=$(date +'%Y-%m-%d %H:%M:%S')
+        echo "current-date=$CURRENT_DATE" >> $GITHUB_OUTPUT
         
     - name: Create GitHub Release
       uses: ncipollo/release-action@v1
@@ -138,11 +147,12 @@ jobs:
         name: Toolchain ${{ needs.check-changes.outputs.commit-date }}
         body: |
           Automatically built toolchain from nilabsent/padavan-ng
-          
+
           **Source:** ${{ env.PADAVAN_REPO }}
-          **Build Date:** $(date +'%Y-%m-%d %H:%M:%S')
-          **Based on padavan-ng commit:** ${{ needs.check-changes.outputs.release-tag }}
-          
+          **Build Date:** ${{ steps.date.outputs.current-date }}
+          **Based on padavan-ng commit:** ${{ needs.check-changes.outputs.commit-sha }}
+          **Release Tag:** ${{ needs.check-changes.outputs.release-tag }}
+
           Built from latest padavan-ng repository changes.
         draft: false
         prerelease: false
