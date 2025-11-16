@@ -63,8 +63,16 @@ jobs:
         ALREADY_BUILT=false
         for release in $(echo "$ALL_RELEASES" | jq -r '.[] | @base64'); do
           RELEASE_BODY=$(echo "$release" | base64 --decode | jq -r '.body')
-          if echo "$RELEASE_BODY" | grep -q "Based on padavan-ng commit: $PADAVAN_COMMIT_SHA"; then
+          # Ищем полный коммит в описании релиза
+          if echo "$RELEASE_BODY" | grep -q "$PADAVAN_COMMIT_SHA"; then
             echo "Found existing release for commit $PADAVAN_COMMIT_SHA"
+            ALREADY_BUILT=true
+            break
+          fi
+          # Также проверяем по короткому хешу (первые 8 символов)
+          SHORT_SHA="${PADAVAN_COMMIT_SHA:0:8}"
+          if echo "$RELEASE_BODY" | grep -q "$SHORT_SHA"; then
+            echo "Found existing release for short commit $SHORT_SHA"
             ALREADY_BUILT=true
             break
           fi
@@ -87,11 +95,9 @@ jobs:
       contents: write
     
     steps:
-    - name: Clone padavan-ng repository with specific commit
+    - name: Clone padavan-ng repository
       run: |
-        git clone ${{ env.PADAVAN_REPO }} padavan-src
-        cd padavan-src
-        git checkout ${{ needs.check-changes.outputs.commit-sha }}
+        git clone --depth 1 --branch master ${{ env.PADAVAN_REPO }} padavan-src
         
     - name: Install dependencies
       run: |
@@ -162,6 +168,6 @@ jobs:
           **Based on padavan-ng commit:** ${{ needs.check-changes.outputs.commit-sha }}
           **Release Tag:** ${{ needs.check-changes.outputs.release-tag }}
 
-          Built from specific padavan-ng repository commit.
+          Built from latest padavan-ng repository changes.
         draft: false
         prerelease: false
