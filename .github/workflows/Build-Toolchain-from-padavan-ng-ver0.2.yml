@@ -22,12 +22,9 @@ jobs:
     - name: Check for changes in padavan-ng repository
       id: check
       run: |
-        # Get latest release from OUR repository
-        LATEST_RELEASE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-          "https://api.github.com/repos/${{ github.repository }}/releases/latest" || echo '{}')
-        LATEST_RELEASE_DATE=$(echo "$LATEST_RELEASE" | jq -r '.published_at // .created_at // ""')
+        echo "=== Debug: Checking for changes ==="
         
-        # Get last commit date from padavan-ng repository with authentication
+        # Get last commit from padavan-ng repository
         PADAVAN_RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
           "https://api.github.com/repos/nilabsent/padavan-ng/commits?path=toolchain&per_page=1")
         
@@ -56,19 +53,29 @@ jobs:
           exit 0
         fi
         
-        echo "Latest release date: $LATEST_RELEASE_DATE"
+        # Get ALL releases from OUR repository to check if we already have this commit
+        ALL_RELEASES=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/${{ github.repository }}/releases" || echo '[]')
         
-        # If no previous release, build anyway
-        if [ -z "$LATEST_RELEASE_DATE" ]; then
-          echo "No previous release found. Should build."
-          echo "should-build=true" >> $GITHUB_OUTPUT
-        # Compare dates - build if padavan has newer commits
-        elif [ "$(date -d "$PADAVAN_LAST_COMMIT" +%s)" -gt "$(date -d "$LATEST_RELEASE_DATE" +%s)" ]; then
-          echo "Changes detected in padavan-ng. Should build."
-          echo "should-build=true" >> $GITHUB_OUTPUT
-        else
-          echo "No changes detected in padavan-ng. Skipping build."
+        echo "Number of releases found: $(echo "$ALL_RELEASES" | jq length)"
+        
+        # Check if we already have a release built from this specific commit
+        ALREADY_BUILT=false
+        for release in $(echo "$ALL_RELEASES" | jq -r '.[] | @base64'); do
+          RELEASE_BODY=$(echo "$release" | base64 --decode | jq -r '.body')
+          if echo "$RELEASE_BODY" | grep -q "Based on padavan-ng commit: $PADAVAN_COMMIT_SHA"; then
+            echo "Found existing release for commit $PADAVAN_COMMIT_SHA"
+            ALREADY_BUILT=true
+            break
+          fi
+        done
+        
+        if [ "$ALREADY_BUILT" = true ]; then
+          echo "Toolchain for commit $PADAVAN_COMMIT_SHA already exists. Skipping build."
           echo "should-build=false" >> $GITHUB_OUTPUT
+        else
+          echo "No existing toolchain for commit $PADAVAN_COMMIT_SHA. Should build."
+          echo "should-build=true" >> $GITHUB_OUTPUT
         fi
 
   build-toolchain:
@@ -80,9 +87,11 @@ jobs:
       contents: write
     
     steps:
-    - name: Clone padavan-ng repository
+    - name: Clone padavan-ng repository with specific commit
       run: |
-        git clone --depth 1 --branch master ${{ env.PADAVAN_REPO }} padavan-src
+        git clone ${{ env.PADAVAN_REPO }} padavan-src
+        cd padavan-src
+        git checkout ${{ needs.check-changes.outputs.commit-sha }}
         
     - name: Install dependencies
       run: |
@@ -153,6 +162,6 @@ jobs:
           **Based on padavan-ng commit:** ${{ needs.check-changes.outputs.commit-sha }}
           **Release Tag:** ${{ needs.check-changes.outputs.release-tag }}
 
-          Built from latest padavan-ng repository changes.
+          Built from specific padavan-ng repository commit.
         draft: false
         prerelease: false
