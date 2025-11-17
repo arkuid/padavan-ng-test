@@ -171,3 +171,49 @@ jobs:
           Built from latest padavan-ng repository changes.
         draft: false
         prerelease: false
+
+    - name: Update latest release
+      run: |
+        # Delete existing latest release if it exists
+        LATEST_RELEASE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/${{ github.repository }}/releases/tags/latest" || echo '{}')
+        
+        LATEST_RELEASE_ID=$(echo "$LATEST_RELEASE" | jq -r '.id // empty')
+        
+        if [ ! -z "$LATEST_RELEASE_ID" ] && [ "$LATEST_RELEASE_ID" != "null" ]; then
+          echo "Deleting existing latest release (ID: $LATEST_RELEASE_ID)"
+          curl -s -X DELETE \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/$LATEST_RELEASE_ID"
+        fi
+        
+        # Create new latest release with the same artifact
+        curl -s -X POST \
+          -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          -H "Content-Type: application/json" \
+          -d "{
+            \"tag_name\": \"latest\",
+            \"name\": \"Latest Toolchain\",
+            \"body\": \"Latest automatically built toolchain from nilabsent/padavan-ng\n\n**Source:** ${{ env.PADAVAN_REPO }}\n**Build Date:** ${{ steps.date.outputs.current-date }}\n**Based on padavan-ng commit:** ${{ needs.check-changes.outputs.commit-sha }}\n**Specific Release:** ${{ needs.check-changes.outputs.release-tag }}\n\nThis is always the most recent built toolchain.\",
+            \"draft\": false,
+            \"prerelease\": false
+          }" \
+          "https://api.github.com/repos/${{ github.repository }}/releases"
+          
+    - name: Upload artifact to latest release
+      run: |
+        # Get the latest release ID
+        LATEST_RELEASE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/${{ github.repository }}/releases/tags/latest")
+        
+        LATEST_RELEASE_ID=$(echo "$LATEST_RELEASE" | jq -r '.id')
+        UPLOAD_URL=$(echo "$LATEST_RELEASE" | jq -r '.upload_url' | sed 's/{.*}//')
+        
+        echo "Uploading to latest release (ID: $LATEST_RELEASE_ID)"
+        
+        # Upload the artifact
+        curl -s -X POST \
+          -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          -H "Content-Type: application/octet-stream" \
+          --data-binary @"${{ env.TOOLCHAIN_FILE }}" \
+          "$UPLOAD_URL?name=${{ env.TOOLCHAIN_FILE }}"
