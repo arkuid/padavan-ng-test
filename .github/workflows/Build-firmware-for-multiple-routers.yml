@@ -45,26 +45,12 @@ jobs:
           git -C padavan-ng checkout "$PADAVAN_COMMIT"
         fi
         
-        # Скачиваем toolchain с правильным URL
+        # Скачиваем toolchain - простой способ без jq
         REPO_URL="https://github.com/arkuid/padavan-ng-test"
+        TOOLCHAIN_URL="$REPO_URL/releases/latest/download/toolchain.tzst"
         
-        echo "Checking available releases..."
-        
-        # Получаем информацию о последнем релизе
-        LATEST_RELEASE_JSON=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-          "https://api.github.com/repos/arkuid/padavan-ng-test/releases/latest")
-        
-        LATEST_TAG=$(echo "$LATEST_RELEASE_JSON" | jq -r '.tag_name')
-        echo "Latest release tag: $LATEST_TAG"
-        
-        if [ "$LATEST_TAG" = "null" ] || [ -z "$LATEST_TAG" ]; then
-          echo "ERROR: No releases found in the repository"
-          exit 1
-        fi
-        
-        # Формируем правильный URL для скачивания
-        TOOLCHAIN_URL="https://github.com/arkuid/padavan-ng-test/releases/download/$LATEST_TAG/toolchain.tzst"
-        echo "Downloading from: $TOOLCHAIN_URL"
+        echo "Downloading toolchain from latest release..."
+        echo "URL: $TOOLCHAIN_URL"
         
         # Скачиваем с повторными попытками
         for i in {1..3}; do
@@ -96,6 +82,9 @@ jobs:
         done
         
         echo "ERROR: Failed to download and extract toolchain after 3 attempts"
+        echo "Please check:"
+        echo "1. That toolchain workflow completed successfully"
+        echo "2. That releases exist at: https://github.com/arkuid/padavan-ng-test/releases"
         exit 1
 
     - name: Build firmware
