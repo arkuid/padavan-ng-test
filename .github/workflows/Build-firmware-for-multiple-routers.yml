@@ -45,9 +45,31 @@ jobs:
           git -C padavan-ng checkout "$PADAVAN_COMMIT"
         fi
         
-        # Скачиваем наш toolchain вместо GitLab
+        # Скачиваем toolchain с повторными попытками
         REPO_URL="https://github.com/arkuid/padavan-ng-test"
-        wget -qO- "$REPO_URL/releases/latest/download/toolchain.tzst" | tar -C padavan-ng --zstd -xf -
+        TOOLCHAIN_URL="$REPO_URL/releases/latest/download/toolchain.tzst"
+        
+        echo "Downloading toolchain..."
+        for i in {1..3}; do
+          echo "Attempt $i/3"
+          if wget -q "$TOOLCHAIN_URL" -O toolchain.tzst && \
+             [ $(stat -c%s "toolchain.tzst" 2>/dev/null || echo 0) -gt 1000000 ] && \
+             tar -I "zstd -T0" -xf toolchain.tzst -C padavan-ng; then
+            echo "SUCCESS: Toolchain downloaded and extracted successfully"
+            rm -f toolchain.tzst
+            break
+          else
+            echo "Attempt $i failed, retrying..."
+            rm -f toolchain.tzst
+            sleep 5
+          fi
+        done
+        
+        # Если все попытки failed
+        if [ ! -d "padavan-ng/toolchain/out" ]; then
+          echo "ERROR: Failed to download toolchain after 3 attempts"
+          exit 1
+        fi
 
     - name: Build firmware
       run: |
