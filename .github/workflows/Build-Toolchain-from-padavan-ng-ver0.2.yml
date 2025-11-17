@@ -170,17 +170,22 @@ jobs:
 
     - name: Create release with asset
       run: |
+        # Create a temporary file with the release data
+        cat > release_data.json << EOF
+        {
+          "tag_name": "latest",
+          "name": "Latest Padavan Toolchain",
+          "body": "Latest automatically built toolchain from nilabsent/padavan-ng\n\n**Source:** ${{ env.PADAVAN_REPO }}\n**Build Date:** ${{ steps.date.outputs.current-date }}\n**Based on padavan-ng commit:** ${{ needs.check-changes.outputs.commit-sha }}\n**Commit Date:** ${{ needs.check-changes.outputs.commit-date }}\n\nUse this URL to always get the newest toolchain:\n\`https://github.com/${{ github.repository }}/releases/latest/download/${{ env.TOOLCHAIN_FILE }}\`",
+          "draft": false,
+          "prerelease": false
+        }
+        EOF
+        
         # First create the release
         RELEASE_RESPONSE=$(curl -s -X POST \
           -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
           -H "Content-Type: application/json" \
-          -d "{
-            \"tag_name\": \"latest\",
-            \"name\": \"Latest Padavan Toolchain\",
-            \"body\": \"Latest automatically built toolchain from nilabsent/padavan-ng\\n\\n**Source:** ${{ env.PADAVAN_REPO }}\\n**Build Date:** ${{ steps.date.outputs.current-date }}\\n**Based on padavan-ng commit:** ${{ needs.check-changes.outputs.commit-sha }}\\n**Commit Date:** ${{ needs.check-changes.outputs.commit-date }}\\n\\nUse this URL to always get the newest toolchain:\\n\\`https://github.com/${{ github.repository }}/releases/latest/download/${{ env.TOOLCHAIN_FILE }}\\`\",
-            \"draft\": false,
-            \"prerelease\": false
-          }" \
+          --data-binary @release_data.json \
           "https://api.github.com/repos/${{ github.repository }}/releases")
         
         echo "Release response: $RELEASE_RESPONSE"
