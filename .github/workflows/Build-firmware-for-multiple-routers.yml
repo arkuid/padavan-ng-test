@@ -47,78 +47,9 @@ jobs:
           git -C padavan-ng checkout "$PADAVAN_COMMIT"
         fi
         
-        # Скачиваем toolchain - исправленный URL
-        REPO_OWNER="arkuid"
-        REPO_NAME="padavan-ng-test"
-        TOOLCHAIN_URL="https://github.com/$REPO_OWNER/$REPO_NAME/releases/latest/download/toolchain.tzst"
-        
-        echo "Downloading toolchain from latest release..."
-        echo "URL: $TOOLCHAIN_URL"
-        
-        # Скачиваем с повторными попытками
-        for i in {1..5}; do
-          echo "Download attempt $i/5"
-          
-          # Используем curl вместо wget для лучшей обработки редиректов
-          if curl -L -f "$TOOLCHAIN_URL" -o toolchain.tzst; then
-            FILE_SIZE=$(stat -c%s "toolchain.tzst" 2>/dev/null || stat -f%z "toolchain.tzst" 2>/dev/null || echo "0")
-            echo "Downloaded file size: $FILE_SIZE bytes"
-            
-            if [ "$FILE_SIZE" -gt 1000000 ]; then
-              echo "Testing archive integrity..."
-              if which zstd >/dev/null 2>&1; then
-                # Проверяем архив с zstd
-                if zstd -t toolchain.tzst; then
-                  echo "Extracting toolchain..."
-                  tar -I "zstd -T0" -xf toolchain.tzst -C padavan-ng/toolchain
-                  echo "SUCCESS: Toolchain extracted successfully"
-                  rm -f toolchain.tzst
-                  
-                  # Проверяем что toolchain на месте
-                  if [ -d "padavan-ng/toolchain/out" ] && [ "$(ls -A padavan-ng/toolchain/out)" ]; then
-                    echo "Toolchain verified: padavan-ng/toolchain/out exists and is not empty"
-                    echo "Toolchain contents:"
-                    ls -la padavan-ng/toolchain/out/
-                    exit 0
-                  else
-                    echo "WARNING: Toolchain directory empty or not found after extraction"
-                    ls -la padavan-ng/toolchain/
-                  fi
-                else
-                  echo "WARNING: Archive integrity test failed on attempt $i"
-                fi
-              else
-                echo "WARNING: zstd not available, trying direct extraction..."
-                tar -I "zstd -T0" -xf toolchain.tzst -C padavan-ng/toolchain && {
-                  echo "SUCCESS: Toolchain extracted (without integrity check)"
-                  rm -f toolchain.tzst
-                  if [ -d "padavan-ng/toolchain/out" ]; then
-                    echo "Toolchain verified"
-                    exit 0
-                  fi
-                } || echo "WARNING: Extraction failed on attempt $i"
-              fi
-            else
-              echo "WARNING: File too small ($FILE_SIZE bytes) on attempt $i"
-            fi
-          else
-            echo "WARNING: Download failed on attempt $i"
-            # Пробуем альтернативный URL
-            ALT_URL="https://github.com/$REPO_OWNER/$REPO_NAME/releases/download/latest/toolchain.tzst"
-            echo "Trying alternative URL: $ALT_URL"
-            curl -L -f "$ALT_URL" -o toolchain.tzst || continue
-          fi
-          
-          rm -f toolchain.tzst
-          sleep 10
-        done
-        
-        echo "ERROR: Failed to download and extract toolchain after 5 attempts"
-        echo "Please check:"
-        echo "1. That releases exist at: https://github.com/$REPO_OWNER/$REPO_NAME/releases"
-        echo "2. That 'toolchain.tzst' is attached to the latest release"
-        echo "3. Network connectivity from GitHub Actions"
-        exit 1
+        # Скачиваем наш toolchain вместо GitLab
+        REPO_URL="https://github.com/${{ github.repository }}"
+        wget -qO- "$REPO_URL/releases/latest/download/toolchain.tzst" | tar -C padavan-ng --zstd -xf -
 
     - name: Build firmware
       run: |
