@@ -46,7 +46,7 @@ jobs:
         fi
         
         # Скачиваем наш toolchain вместо GitLab
-        REPO_URL="https://github.com/${{ github.repository }}"
+        REPO_URL="https://github.com/arkuid/padavan-ng-test/"
         wget -qO- "$REPO_URL/releases/latest/download/toolchain.tzst" | tar -C padavan-ng --zstd -xf -
 
     - name: Build firmware
