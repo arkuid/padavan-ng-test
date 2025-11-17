@@ -154,27 +154,9 @@ jobs:
         CURRENT_DATE=$(date +'%Y-%m-%d %H:%M:%S')
         echo "current-date=$CURRENT_DATE" >> $GITHUB_OUTPUT
         
-    - name: Create GitHub Release
-      uses: ncipollo/release-action@v1
-      with:
-        artifacts: ${{ env.TOOLCHAIN_FILE }}
-        tag: ${{ needs.check-changes.outputs.release-tag }}
-        name: Toolchain ${{ needs.check-changes.outputs.commit-date }}
-        body: |
-          Automatically built toolchain from nilabsent/padavan-ng
-
-          **Source:** ${{ env.PADAVAN_REPO }}
-          **Build Date:** ${{ steps.date.outputs.current-date }}
-          **Based on padavan-ng commit:** ${{ needs.check-changes.outputs.commit-sha }}
-          **Release Tag:** ${{ needs.check-changes.outputs.release-tag }}
-
-          Built from latest padavan-ng repository changes.
-        draft: false
-        prerelease: false
-
-    - name: Update latest release
+    - name: Delete existing latest release if exists
       run: |
-        # Delete existing latest release if it exists
+        # Check if latest release exists and delete it
         LATEST_RELEASE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
           "https://api.github.com/repos/${{ github.repository }}/releases/tags/latest" || echo '{}')
         
@@ -185,35 +167,60 @@ jobs:
           curl -s -X DELETE \
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             "https://api.github.com/repos/${{ github.repository }}/releases/$LATEST_RELEASE_ID"
+        else
+          echo "No existing latest release found"
         fi
         
-        # Create new latest release with the same artifact
-        curl -s -X POST \
-          -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-          -H "Content-Type: application/json" \
-          -d "{
-            \"tag_name\": \"latest\",
-            \"name\": \"Latest Toolchain\",
-            \"body\": \"Latest automatically built toolchain from nilabsent/padavan-ng\n\n**Source:** ${{ env.PADAVAN_REPO }}\n**Build Date:** ${{ steps.date.outputs.current-date }}\n**Based on padavan-ng commit:** ${{ needs.check-changes.outputs.commit-sha }}\n**Specific Release:** ${{ needs.check-changes.outputs.release-tag }}\n\nThis is always the most recent built toolchain.\",
-            \"draft\": false,
-            \"prerelease\": false
-          }" \
-          "https://api.github.com/repos/${{ github.repository }}/releases"
-          
-    - name: Upload artifact to latest release
+    - name: Delete existing latest tag if exists
       run: |
-        # Get the latest release ID
-        LATEST_RELEASE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-          "https://api.github.com/repos/${{ github.repository }}/releases/tags/latest")
+        # Check if latest tag exists and delete it
+        LATEST_TAG=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/${{ github.repository }}/git/refs/tags/latest" || echo '{}')
         
-        LATEST_RELEASE_ID=$(echo "$LATEST_RELEASE" | jq -r '.id')
-        UPLOAD_URL=$(echo "$LATEST_RELEASE" | jq -r '.upload_url' | sed 's/{.*}//')
-        
-        echo "Uploading to latest release (ID: $LATEST_RELEASE_ID)"
-        
-        # Upload the artifact
-        curl -s -X POST \
-          -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-          -H "Content-Type: application/octet-stream" \
-          --data-binary @"${{ env.TOOLCHAIN_FILE }}" \
-          "$UPLOAD_URL?name=${{ env.TOOLCHAIN_FILE }}"
+        if echo "$LATEST_TAG" | jq -e '.ref' > /dev/null 2>&1; then
+          echo "Deleting existing latest tag"
+          curl -s -X DELETE \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/git/refs/tags/latest"
+        else
+          echo "No existing latest tag found"
+        fi
+
+    - name: Create GitHub Release with latest tag
+      uses: ncipollo/release-action@v1
+      with:
+        artifacts: ${{ env.TOOLCHAIN_FILE }}
+        tag: latest
+        name: Latest Toolchain (${{ needs.check-changes.outputs.commit-date }})
+        body: |
+          Latest automatically built toolchain from nilabsent/padavan-ng
+
+          **Source:** ${{ env.PADAVAN_REPO }}
+          **Build Date:** ${{ steps.date.outputs.current-date }}
+          **Based on padavan-ng commit:** ${{ needs.check-changes.outputs.commit-sha }}
+          **Specific Version:** ${{ needs.check-changes.outputs.release-tag }}
+
+          This is always the most recent built toolchain. Use this for automatic downloads.
+          
+          For specific versions, see other releases.
+        draft: false
+        prerelease: false
+        allowUpdates: true
+
+    - name: Create versioned release for history
+      uses: ncipollo/release-action@v1
+      with:
+        artifacts: ${{ env.TOOLCHAIN_FILE }}
+        tag: ${{ needs.check-changes.outputs.release-tag }}
+        name: Toolchain ${{ needs.check-changes.outputs.commit-date }}
+        body: |
+          Versioned toolchain from nilabsent/padavan-ng
+
+          **Source:** ${{ env.PADAVAN_REPO }}
+          **Build Date:** ${{ steps.date.outputs.current-date }}
+          **Based on padavan-ng commit:** ${{ needs.check-changes.outputs.commit-sha }}
+          
+          This is a specific version release for historical reference.
+          For the latest toolchain, use the "latest" release.
+        draft: false
+        prerelease: false
