@@ -133,6 +133,7 @@ jobs:
         cp -r padavan-src/toolchain/out temp_toolchain/toolchain/
         tar -I "zstd -9 -T0" -cf ${{ env.TOOLCHAIN_FILE }} -C temp_toolchain toolchain
         echo "Archive created: ${{ env.TOOLCHAIN_FILE }}"
+        ls -la ${{ env.TOOLCHAIN_FILE }}
         
     - name: Upload toolchain as artifact
       uses: actions/upload-artifact@v4
@@ -147,24 +148,91 @@ jobs:
         CURRENT_DATE=$(date +'%Y-%m-%d %H:%M:%S')
         echo "current-date=$CURRENT_DATE" >> $GITHUB_OUTPUT
         
-    - name: Create or Update Latest Release
-      uses: ncipollo/release-action@v1
-      with:
-        artifacts: ${{ env.TOOLCHAIN_FILE }}
-        tag: latest
-        name: Latest Padavan Toolchain
-        body: |
-          Latest automatically built toolchain from nilabsent/padavan-ng
+    - name: Delete existing latest release
+      run: |
+        # Check if latest release exists and delete it
+        LATEST_RELEASE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/${{ github.repository }}/releases/tags/latest" || echo '{}')
+        
+        LATEST_RELEASE_ID=$(echo "$LATEST_RELEASE" | jq -r '.id // empty')
+        
+        if [ ! -z "$LATEST_RELEASE_ID" ] && [ "$LATEST_RELEASE_ID" != "null" ]; then
+          echo "Deleting existing latest release (ID: $LATEST_RELEASE_ID)"
+          curl -s -X DELETE \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/$LATEST_RELEASE_ID"
+        fi
+        
+        # Also delete the latest tag
+        curl -s -X DELETE \
+          -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/${{ github.repository }}/git/refs/tags/latest" || echo "Tag may not exist"
 
-          **Source:** ${{ env.PADAVAN_REPO }}
-          **Build Date:** ${{ steps.date.outputs.current-date }}
-          **Based on padavan-ng commit:** ${{ needs.check-changes.outputs.commit-sha }}
-          **Commit Date:** ${{ needs.check-changes.outputs.commit-date }}
+    - name: Create release with asset
+      run: |
+        # First create the release
+        RELEASE_RESPONSE=$(curl -s -X POST \
+          -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          -H "Content-Type: application/json" \
+          -d "{
+            \"tag_name\": \"latest\",
+            \"name\": \"Latest Padavan Toolchain\",
+            \"body\": \"Latest automatically built toolchain from nilabsent/padavan-ng\\n\\n**Source:** ${{ env.PADAVAN_REPO }}\\n**Build Date:** ${{ steps.date.outputs.current-date }}\\n**Based on padavan-ng commit:** ${{ needs.check-changes.outputs.commit-sha }}\\n**Commit Date:** ${{ needs.check-changes.outputs.commit-date }}\\n\\nUse this URL to always get the newest toolchain:\\n\\`https://github.com/${{ github.repository }}/releases/latest/download/${{ env.TOOLCHAIN_FILE }}\\`\",
+            \"draft\": false,
+            \"prerelease\": false
+          }" \
+          "https://api.github.com/repos/${{ github.repository }}/releases")
+        
+        echo "Release response: $RELEASE_RESPONSE"
+        
+        # Get the upload URL from the response
+        UPLOAD_URL=$(echo "$RELEASE_RESPONSE" | jq -r '.upload_url' | sed 's/{.*}//')
+        RELEASE_ID=$(echo "$RELEASE_RESPONSE" | jq -r '.id')
+        
+        echo "Upload URL: $UPLOAD_URL"
+        echo "Release ID: $RELEASE_ID"
+        
+        if [ "$UPLOAD_URL" != "null" ] && [ ! -z "$UPLOAD_URL" ]; then
+          # Upload the asset
+          echo "Uploading asset ${{ env.TOOLCHAIN_FILE }}"
+          ASSET_RESPONSE=$(curl -s -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary @"${{ env.TOOLCHAIN_FILE }}" \
+            "$UPLOAD_URL?name=${{ env.TOOLCHAIN_FILE }}")
+          
+          echo "Asset upload response: $ASSET_RESPONSE"
+          
+          # Check if upload was successful
+          if echo "$ASSET_RESPONSE" | jq -e '.browser_download_url' > /dev/null 2>&1; then
+            DOWNLOAD_URL=$(echo "$ASSET_RESPONSE" | jq -r '.browser_download_url')
+            echo "✅ Asset uploaded successfully: $DOWNLOAD_URL"
+          else
+            echo "❌ Asset upload failed"
+            exit 1
+          fi
+        else
+          echo "❌ Failed to create release or get upload URL"
+          exit 1
+        fi
 
-          This release is always updated to the latest version.
-          Use this URL to always get the newest toolchain:
-          `https://github.com/${{ github.repository }}/releases/latest/download/toolchain.tzst`
-        draft: false
-        prerelease: false
-        allowUpdates: true
-        replaceArtifacts: true
+    - name: Verify release asset
+      run: |
+        echo "Waiting 10 seconds for GitHub to process the release..."
+        sleep 10
+        
+        # Check if the asset is accessible
+        DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/latest/download/${{ env.TOOLCHAIN_FILE }}"
+        echo "Checking: $DOWNLOAD_URL"
+        
+        HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -L "$DOWNLOAD_URL")
+        echo "HTTP Status: $HTTP_STATUS"
+        
+        if [ "$HTTP_STATUS" -eq 200 ]; then
+          echo "✅ SUCCESS: Asset is accessible at $DOWNLOAD_URL"
+          echo "You can now use this URL in other workflows:"
+          echo "wget $DOWNLOAD_URL"
+        else
+          echo "❌ ERROR: Asset is not accessible (HTTP $HTTP_STATUS)"
+          echo "The download URL may not work yet. Try again in a few minutes."
+        fi
