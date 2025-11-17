@@ -53,9 +53,6 @@ jobs:
     echo "Downloading toolchain from latest release..."
     echo "URL: $TOOLCHAIN_URL"
     
-    # Создаем директорию для toolchain
-    mkdir -p padavan-ng/toolchain
-    
     # Скачиваем с повторными попытками
     for i in {1..5}; do
       echo "Download attempt $i/5"
