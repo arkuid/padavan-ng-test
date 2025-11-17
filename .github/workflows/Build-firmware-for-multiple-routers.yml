@@ -45,17 +45,18 @@ jobs:
           git -C padavan-ng checkout "$PADAVAN_COMMIT"
         fi
         
-        # Скачиваем toolchain - простой способ без jq
+        # Скачиваем toolchain
         REPO_URL="https://github.com/arkuid/padavan-ng-test"
         TOOLCHAIN_URL="$REPO_URL/releases/latest/download/toolchain.tzst"
         
         echo "Downloading toolchain from latest release..."
         echo "URL: $TOOLCHAIN_URL"
         
-        # Скачиваем с повторными попытками
+        # Скачиваем с повторными попытками и флагом следования за редиректами
         for i in {1..3}; do
           echo "Download attempt $i/3"
-          if wget -q "$TOOLCHAIN_URL" -O toolchain.tzst; then
+          # Используем wget с флагом -L для следования за редиректами
+          if wget -q -L "$TOOLCHAIN_URL" -O toolchain.tzst; then
             FILE_SIZE=$(stat -c%s "toolchain.tzst" 2>/dev/null || echo "0")
             echo "Downloaded file size: $FILE_SIZE bytes"
             
@@ -66,12 +67,19 @@ jobs:
                 tar -I "zstd -T0" -xf toolchain.tzst -C padavan-ng
                 echo "SUCCESS: Toolchain extracted successfully"
                 rm -f toolchain.tzst
-                exit 0
+                
+                # Проверяем что toolchain на месте
+                if [ -d "padavan-ng/toolchain/out" ]; then
+                  echo "Toolchain verified: padavan-ng/toolchain/out exists"
+                  exit 0
+                else
+                  echo "WARNING: Toolchain directory not found after extraction"
+                fi
               else
                 echo "WARNING: Archive test failed on attempt $i"
               fi
             else
-              echo "WARNING: File too small on attempt $i"
+              echo "WARNING: File too small ($FILE_SIZE bytes) on attempt $i"
             fi
           else
             echo "WARNING: Download failed on attempt $i"
@@ -85,6 +93,7 @@ jobs:
         echo "Please check:"
         echo "1. That toolchain workflow completed successfully"
         echo "2. That releases exist at: https://github.com/arkuid/padavan-ng-test/releases"
+        echo "3. That file 'toolchain.tzst' is attached to the latest release"
         exit 1
 
     - name: Build firmware
