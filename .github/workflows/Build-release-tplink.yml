@@ -230,10 +230,10 @@ jobs:
         fi
 
     - name: Create Release
-  uses: actions/create-release@v1
+  uses: ncipollo/release-action@v1
   with:
-    tag_name: build-${{ needs.check-changes.outputs.commit-date }}_${{ env.SHORT_SHA }}
-    release_name: Build ${{ needs.check-changes.outputs.commit-date }} (${{ env.SHORT_SHA }})
+    tag: build-${{ needs.check-changes.outputs.commit-date }}_${{ env.SHORT_SHA }}
+    name: Build ${{ needs.check-changes.outputs.commit-date }} (${{ env.SHORT_SHA }})
     body: |
       Automated firmware build for ${{ env.ROUTER_MODEL }}
       
@@ -242,17 +242,8 @@ jobs:
       **Router model:** ${{ env.ROUTER_MODEL }}
       
       Last commit message: ${{ needs.check-changes.outputs.latest-commit-message }}
+    artifacts: ${{ env.FW_FILE_NAME }}
     draft: false
     prerelease: false
-  env:
-    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-- name: Upload Release Asset
-  uses: actions/upload-release-asset@v1
-  with:
-    upload_url: ${{ steps.create_release.outputs.upload_url }}
-    asset_path: ./${{ env.FW_FILE_NAME }}
-    asset_name: ${{ env.FW_FILE_NAME }}
-    asset_content_type: application/octet-stream
   env:
     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
