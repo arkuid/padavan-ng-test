@@ -233,7 +233,7 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         tag_name: build-${{ needs.check-changes.outputs.commit-date }}_${{ env.SHORT_SHA }}
-        release_name: "Build ${{ needs.check-changes.outputs.commit-date }} (${{ env.SHORT_SHA }})"
+        name: "Build ${{ needs.check-changes.outputs.commit-date }} (${{ env.SHORT_SHA }})"
         body: |
           Automated firmware build for ${{ env.ROUTER_MODEL }}
           
