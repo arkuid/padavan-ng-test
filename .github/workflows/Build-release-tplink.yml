@@ -229,22 +229,58 @@ jobs:
           exit 1
         fi
 
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: build-${{ needs.check-changes.outputs.commit-date }}_${{ env.SHORT_SHA }}
-        name: "Build ${{ needs.check-changes.outputs.commit-date }} (${{ env.SHORT_SHA }})"
-        body: |
-          Automated firmware build for ${{ env.ROUTER_MODEL }}
-          
-          **Source commit:** ${{ needs.check-changes.outputs.commit-sha }}
-          **Build date:** ${{ env.BUILD_TIMESTAMP }}
-          **Router model:** ${{ env.ROUTER_MODEL }}
-          
-          Last commit message: ${{ needs.check-changes.outputs.latest-commit-message }}
-        files: |
-          ${{ env.FW_FILE_NAME }}
-        draft: false
-        prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Create firmware release
+  run: |
+    TAG_NAME="build-${{ needs.check-changes.outputs.commit-date }}_${{ env.SHORT_SHA }}"
+    RELEASE_NAME="Build ${{ needs.check-changes.outputs.commit-date }} (${{ env.SHORT_SHA }})"
+    
+    # Create a temporary file with the release data
+    cat > release_data.json << 'EOF'
+{
+  "tag_name": "'"$TAG_NAME"'",
+  "name": "'"$RELEASE_NAME"'", 
+  "body": "Automated firmware build for ${{ env.ROUTER_MODEL }}\n\n**Source commit:** ${{ needs.check-changes.outputs.commit-sha }}\n**Build date:** ${{ env.BUILD_TIMESTAMP }}\n**Router model:** ${{ env.ROUTER_MODEL }}\n\nLast commit message: ${{ needs.check-changes.outputs.latest-commit-message }}",
+  "draft": false,
+  "prerelease": false
+}
+EOF
+    
+    # First create the release
+    RELEASE_RESPONSE=$(curl -s -X POST \
+      -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+      -H "Content-Type: application/json" \
+      -d @release_data.json \
+      "https://api.github.com/repos/${{ github.repository }}/releases")
+    
+    echo "Release response: $RELEASE_RESPONSE"
+    
+    # Get the upload URL from the response
+    UPLOAD_URL=$(echo "$RELEASE_RESPONSE" | jq -r '.upload_url' | sed 's/{.*}//')
+    RELEASE_ID=$(echo "$RELEASE_RESPONSE" | jq -r '.id')
+    
+    echo "Upload URL: $UPLOAD_URL"
+    echo "Release ID: $RELEASE_ID"
+    
+    if [ "$UPLOAD_URL" != "null" ] && [ -n "$UPLOAD_URL" ]; then
+      # Upload the firmware asset
+      echo "Uploading asset ${{ env.FW_FILE_NAME }}"
+      ASSET_RESPONSE=$(curl -s -X POST \
+        -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+        -H "Content-Type: application/octet-stream" \
+        --data-binary @"${{ env.FW_FILE_NAME }}" \
+        "$UPLOAD_URL?name=${{ env.FW_FILE_NAME }}")
+      
+      echo "Asset upload response: $ASSET_RESPONSE"
+      
+      # Check if upload was successful
+      if echo "$ASSET_RESPONSE" | jq -e '.browser_download_url' > /dev/null 2>&1; then
+        DOWNLOAD_URL=$(echo "$ASSET_RESPONSE" | jq -r '.browser_download_url')
+        echo "✅ Firmware uploaded successfully: $DOWNLOAD_URL"
+      else
+        echo "❌ Firmware upload failed"
+        exit 1
+      fi
+    else
+      echo "❌ Failed to create release or get upload URL"
+      exit 1
+    fi
