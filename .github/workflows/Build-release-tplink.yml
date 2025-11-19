@@ -1,0 +1,250 @@
+name: Check and Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      router_model:
+        description: "Router model"
+        type: string
+        required: true
+        default: "tplink-c5-v4-16M"
+  schedule:
+    - cron: '0 12 */7 * *'
+  push:
+    branches: [ main ]
+
+jobs:
+  check-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      should-build: ${{ steps.check.outputs.should-build }}
+      commit-date: ${{ steps.check.outputs.commit-date }}
+      commit-sha: ${{ steps.check.outputs.commit-sha }}
+      commit-short-sha: ${{ steps.check.outputs.commit-short-sha }}
+      latest-commit-message: ${{ steps.check.outputs.latest-commit-message }}
+    steps:
+    - name: Check for changes in padavan-ng trunk
+      id: check
+      run: |
+        echo "=== Debug: Checking for changes in padavan-ng trunk ==="
+        
+        # Получаем последние коммиты для trunk
+        PADAVAN_RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/nilabsent/padavan-ng/commits?path=trunk&per_page=1")
+        
+        # Проверяем валидность ответа
+        if echo "$PADAVAN_RESPONSE" | jq -e '.[0]' > /dev/null 2>&1; then
+          PADAVAN_LAST_COMMIT=$(echo "$PADAVAN_RESPONSE" | jq -r '.[0].commit.committer.date')
+          PADAVAN_COMMIT_SHA=$(echo "$PADAVAN_RESPONSE" | jq -r '.[0].sha')
+          PADAVAN_COMMIT_MESSAGE=$(echo "$PADAVAN_RESPONSE" | jq -r '.[0].commit.message')
+          PADAVAN_SHORT_SHA="${PADAVAN_COMMIT_SHA:0:8}"
+          
+          echo "Last padavan-ng trunk commit date: $PADAVAN_LAST_COMMIT"
+          echo "Last padavan-ng trunk commit SHA: $PADAVAN_COMMIT_SHA"
+          echo "Last commit message: $PADAVAN_COMMIT_MESSAGE"
+          
+          # Форматируем дату для тега релиза
+          COMMIT_DATE_FORMATTED=$(date -d "$PADAVAN_LAST_COMMIT" +'%Y%m%d')
+          echo "commit-date=$COMMIT_DATE_FORMATTED" >> $GITHUB_OUTPUT
+          echo "commit-sha=$PADAVAN_COMMIT_SHA" >> $GITHUB_OUTPUT
+          echo "commit-short-sha=$PADAVAN_SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "latest-commit-message=$PADAVAN_COMMIT_MESSAGE" >> $GITHUB_OUTPUT
+        else
+          echo "Error accessing padavan-ng repository, building anyway"
+          CURRENT_DATE=$(date +'%Y%m%d')
+          echo "should-build=true" >> $GITHUB_OUTPUT
+          echo "commit-date=$CURRENT_DATE" >> $GITHUB_OUTPUT
+          echo "commit-sha=unknown" >> $GITHUB_OUTPUT
+          echo "commit-short-sha=unknown" >> $GITHUB_OUTPUT
+          echo "latest-commit-message=unknown" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+        
+        # Получаем ВСЕ релизы из НАШЕГО репозитория для проверки
+        ALL_RELEASES=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/${{ github.repository }}/releases" || echo '[]')
+        
+        echo "Number of releases found: $(echo "$ALL_RELEASES" | jq length)"
+        
+        # Проверяем, есть ли уже релиз, собранный с этого коммита trunk
+        ALREADY_BUILT=false
+        for release in $(echo "$ALL_RELEASES" | jq -r '.[] | @base64'); do
+          RELEASE_BODY=$(echo "$release" | base64 --decode | jq -r '.body')
+          # Ищем полный коммит в описании релиза
+          if echo "$RELEASE_BODY" | grep -q "$PADAVAN_COMMIT_SHA"; then
+            echo "Found existing release for trunk commit $PADAVAN_COMMIT_SHA"
+            ALREADY_BUILT=true
+            break
+          fi
+        done
+        
+        if [ "$ALREADY_BUILT" = true ]; then
+          echo "Firmware for trunk commit $PADAVAN_COMMIT_SHA already exists. Skipping build."
+          echo "should-build=false" >> $GITHUB_OUTPUT
+        else
+          echo "No existing firmware for trunk commit $PADAVAN_COMMIT_SHA. Should build."
+          echo "should-build=true" >> $GITHUB_OUTPUT
+        fi
+
+  build:
+    runs-on: ubuntu-22.04
+    container: registry.gitlab.com/hadzhioglu/padavan-ng
+    needs: check-changes
+    # Запускаем сборку только если есть изменения в trunk ИЛИ при ручном запуске
+    if: needs.check-changes.outputs.should-build == 'true' || github.event_name == 'workflow_dispatch'
+    defaults:
+      run:
+        shell: bash
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Debug workspace structure
+      run: |
+        echo "=== Workspace structure ==="
+        pwd
+        ls -la
+        echo "=== Patches directory ==="
+        find . -name "patches" -type d 2>/dev/null | head -5
+        if [ -d "patches" ]; then
+          find patches -type f -name "*.patch" | head -10
+        fi
+
+    - name: Set router model
+      run: |
+        # Принудительно используем tplink-c5-v4-16M
+        ROUTER_MODEL="tplink-c5-v4-16M"
+        echo "ROUTER_MODEL=$ROUTER_MODEL" >> $GITHUB_ENV
+        echo "Using router model: $ROUTER_MODEL"
+
+    - name: Get variables
+      run: |
+        sed -i 's|\r$||g' variables build-${{ env.ROUTER_MODEL }}.config
+        . <(cat variables build-${{ env.ROUTER_MODEL }}.config)
+        for v in "${!PADAVAN_@}" "${!CONFIG_@}"; do
+          echo "$v=${!v}" >> $GITHUB_ENV
+        done
+
+    - name: Download sources and toolchain
+      run: |
+        git config --global --add safe.directory '*'
+        git clone --depth 1 -b "$PADAVAN_BRANCH" "https://github.com/nilabsent/padavan-ng.git"
+        if [ "$PADAVAN_COMMIT" != "HEAD" ]; then
+          git -C padavan-ng checkout "$PADAVAN_COMMIT"
+        fi
+        
+        # Скачиваем наш toolchain вместо GitLab
+        REPO_URL="https://github.com/${{ github.repository }}"
+        wget -qO- "$REPO_URL/releases/latest/download/toolchain.tzst" | tar -C padavan-ng --zstd -xf -
+
+    - name: Build firmware
+      run: |
+        ROUTER_MODEL="${{ env.ROUTER_MODEL }}"
+        COMMIT_SHA="${{ needs.check-changes.outputs.commit-sha }}"
+        SHORT_SHA="${{ needs.check-changes.outputs.commit-short-sha }}"
+        
+        # Используем абсолютный путь к workspace
+        WORKSPACE_PATH="$GITHUB_WORKSPACE"
+        echo "Workspace: $WORKSPACE_PATH"
+        echo "Looking for patches in: $WORKSPACE_PATH/patches/$ROUTER_MODEL"
+        
+        # Применяем патчи
+        if [ -d "$WORKSPACE_PATH/patches/$ROUTER_MODEL" ] && [ "$(ls -A $WORKSPACE_PATH/patches/$ROUTER_MODEL/*.patch 2>/dev/null)" ]; then
+          echo "Found patches for $ROUTER_MODEL:"
+          ls -la "$WORKSPACE_PATH/patches/$ROUTER_MODEL/"
+          
+          echo "Applying patches for $ROUTER_MODEL..."
+          cd padavan-ng
+          for patch_file in $WORKSPACE_PATH/patches/$ROUTER_MODEL/*.patch; do
+            echo "=== Applying patch: $(basename $patch_file) ==="
+            if git apply --check "$patch_file" 2>/dev/null; then
+              git apply "$patch_file"
+              echo "✓ Patch applied successfully"
+            else
+              echo "⚠ Applying patch with skip: $(basename $patch_file)"
+              patch -p1 --forward < "$patch_file" || true
+            fi
+          done
+          cd ..
+        else
+          echo "No patches found for $ROUTER_MODEL at $WORKSPACE_PATH/patches/$ROUTER_MODEL"
+        fi
+
+        # Копируем дополнительные файлы
+        if [ -d "$WORKSPACE_PATH/routers/$ROUTER_MODEL" ] && [ "$(ls -A $WORKSPACE_PATH/routers/$ROUTER_MODEL)" ]; then
+          echo "Copying config files for $ROUTER_MODEL..."
+          cp -rv $WORKSPACE_PATH/routers/$ROUTER_MODEL/* padavan-ng/trunk/configs/
+        else
+          echo "No config files found for $ROUTER_MODEL, skipping..."
+        fi
+
+        # Копируем основной конфиг
+        cp $WORKSPACE_PATH/build-$ROUTER_MODEL.config padavan-ng/trunk/.config
+
+        # Копируем все дополнительные файлы из корня (если нужно)
+        if [ -f "$WORKSPACE_PATH/rules" ]; then
+          cp -v $WORKSPACE_PATH/rules padavan-ng/trunk/
+        fi
+        if [ -f "$WORKSPACE_PATH/Makefile" ]; then
+          cp -v $WORKSPACE_PATH/Makefile padavan-ng/trunk/
+        fi
+
+        # Сборка прошивки
+        cd padavan-ng/trunk
+        ./clear_tree.sh
+        ./build_firmware.sh
+
+        # Поиск файла прошивки
+        FW_FILE_NAME="$(find images -type f -regextype posix-extended -iregex ".*\.(trx|bin)$" \
+                        -printf "%T@\t%f\n" | sort -V | tail -1 | cut -f2)"
+        [[ -n $FW_FILE_NAME ]] || { echo "Firmware file not found"; exit 1; }
+        
+        # Переименовываем прошивку, добавляя хеш коммита
+        FW_EXTENSION="${FW_FILE_NAME##*.}"
+        FW_BASENAME="${FW_FILE_NAME%.*}"
+        NEW_FW_NAME="${FW_BASENAME}_${SHORT_SHA}.${FW_EXTENSION}"
+        cp "images/$FW_FILE_NAME" "images/$NEW_FW_NAME"
+        
+        echo "FW_FILE_NAME=$NEW_FW_NAME" >> $GITHUB_ENV
+        echo "ORIGINAL_FW_NAME=$FW_FILE_NAME" >> $GITHUB_ENV
+
+    - name: Prepare artifacts
+      run: |
+        cp "padavan-ng/trunk/images/$FW_FILE_NAME" .
+        echo "BUILD_TIMESTAMP=$(date '+%Y.%m.%d_%H.%M.%S')" >> $GITHUB_ENV
+        echo "COMMIT_SHA=${{ needs.check-changes.outputs.commit-sha }}" >> $GITHUB_ENV
+        echo "SHORT_SHA=${{ needs.check-changes.outputs.commit-short-sha }}" >> $GITHUB_ENV
+
+    - name: Check firmware size
+      run: |
+        ROUTER_MODEL="${{ env.ROUTER_MODEL }}"
+        partitions="padavan-ng/trunk/configs/boards/$CONFIG_VENDOR/$CONFIG_FIRMWARE_PRODUCT_ID/partitions.config"
+        max_fw_size="$(awk '/Firmware/ { getline; getline; sub(",", ""); print strtonum($2); }' "$partitions")"
+        fw_size="$(stat -c %s "$FW_FILE_NAME")"
+
+        if ((fw_size > max_fw_size)); then
+          fw_size_fmtd="$(numfmt --grouping "$fw_size") bytes"
+          max_fw_size_fmtd="$(numfmt --grouping "$max_fw_size") bytes"
+          echo "Firmware size ($fw_size_fmtd) exceeds max size ($max_fw_size_fmtd) for $ROUTER_MODEL"
+          exit 1
+        fi
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: build-${{ needs.check-changes.outputs.commit-date }}_${{ env.SHORT_SHA }}
+        release_name: "Build ${{ needs.check-changes.outputs.commit-date }} (${{ env.SHORT_SHA }})"
+        body: |
+          Automated firmware build for ${{ env.ROUTER_MODEL }}
+          
+          **Source commit:** ${{ needs.check-changes.outputs.commit-sha }}
+          **Build date:** ${{ env.BUILD_TIMESTAMP }}
+          **Router model:** ${{ env.ROUTER_MODEL }}
+          
+          Last commit message: ${{ needs.check-changes.outputs.latest-commit-message }}
+        files: |
+          ${{ env.FW_FILE_NAME }}
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
