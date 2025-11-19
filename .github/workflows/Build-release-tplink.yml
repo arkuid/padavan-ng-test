@@ -229,52 +229,30 @@ jobs:
           exit 1
         fi
 
-    - name: Create firmware release
-  run: |
-    TAG_NAME="build-${{ needs.check-changes.outputs.commit-date }}_${{ env.SHORT_SHA }}"
-    RELEASE_NAME="Build ${{ needs.check-changes.outputs.commit-date }} (${{ env.SHORT_SHA }})"
-    BODY="Automated firmware build for ${{ env.ROUTER_MODEL }}\n\n**Source commit:** ${{ needs.check-changes.outputs.commit-sha }}\n**Build date:** ${{ env.BUILD_TIMESTAMP }}\n**Router model:** ${{ env.ROUTER_MODEL }}\n\nLast commit message: ${{ needs.check-changes.outputs.latest-commit-message }}"
-    
-    # Create release using jq to format JSON
-    RELEASE_JSON=$(jq -n \
-      --arg tag "$TAG_NAME" \
-      --arg name "$RELEASE_NAME" \
-      --arg body "$BODY" \
-      '{
-        tag_name: $tag,
-        name: $name,
-        body: $body,
-        draft: false,
-        prerelease: false
-      }')
-    
-    RELEASE_RESPONSE=$(echo "$RELEASE_JSON" | curl -s -X POST \
-      -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-      -H "Content-Type: application/json" \
-      -d @- \
-      "https://api.github.com/repos/${{ github.repository }}/releases")
-    
-    echo "Release response: $RELEASE_RESPONSE"
-    
-    # Get the upload URL from the response
-    UPLOAD_URL=$(echo "$RELEASE_RESPONSE" | jq -r '.upload_url' | sed 's/{.*}//')
-    
-    if [ "$UPLOAD_URL" != "null" ] && [ -n "$UPLOAD_URL" ]; then
-      # Upload the firmware asset
-      echo "Uploading asset ${{ env.FW_FILE_NAME }}"
-      ASSET_RESPONSE=$(curl -s -X POST \
-        -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-        -H "Content-Type: application/octet-stream" \
-        --data-binary @"${{ env.FW_FILE_NAME }}" \
-        "$UPLOAD_URL?name=${{ env.FW_FILE_NAME }}")
+    - name: Create Release
+  uses: actions/create-release@v1
+  with:
+    tag_name: build-${{ needs.check-changes.outputs.commit-date }}_${{ env.SHORT_SHA }}
+    release_name: Build ${{ needs.check-changes.outputs.commit-date }} (${{ env.SHORT_SHA }})
+    body: |
+      Automated firmware build for ${{ env.ROUTER_MODEL }}
       
-      if echo "$ASSET_RESPONSE" | jq -e '.browser_download_url' > /dev/null 2>&1; then
-        echo "✅ Firmware uploaded successfully"
-      else
-        echo "❌ Firmware upload failed"
-        exit 1
-      fi
-    else
-      echo "❌ Failed to create release"
-      exit 1
-    fi
+      **Source commit:** ${{ needs.check-changes.outputs.commit-sha }}
+      **Build date:** ${{ env.BUILD_TIMESTAMP }}
+      **Router model:** ${{ env.ROUTER_MODEL }}
+      
+      Last commit message: ${{ needs.check-changes.outputs.latest-commit-message }}
+    draft: false
+    prerelease: false
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+- name: Upload Release Asset
+  uses: actions/upload-release-asset@v1
+  with:
+    upload_url: ${{ steps.create_release.outputs.upload_url }}
+    asset_path: ./${{ env.FW_FILE_NAME }}
+    asset_name: ${{ env.FW_FILE_NAME }}
+    asset_content_type: application/octet-stream
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
