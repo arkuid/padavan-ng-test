@@ -155,9 +155,20 @@ jobs:
           git -C padavan-ng checkout "$PADAVAN_COMMIT"
         fi
         
-        # Скачиваем наш toolchain вместо GitLab
-        REPO_URL="https://github.com/${{ github.repository }}"
-        wget -qO- "$REPO_URL/releases/latest/download/toolchain.tzst" | tar -C padavan-ng --zstd -xf -
+        # Прямая загрузка toolchain
+        cd padavan-ng
+        wget -q "https://github.com/arkuid/padavan-ng-test/releases/download/latest/toolchain.tzst"
+        if [ -f "toolchain.tzst" ]; then
+          echo "✓ Toolchain downloaded successfully"
+          tar --zstd -xf toolchain.tzst
+          rm toolchain.tzst
+          echo "✓ Toolchain extracted successfully"
+          ls -la toolchain-*
+        else
+          echo "❌ Failed to download toolchain"
+          exit 1
+        fi
+        cd ..
 
     - name: Build firmware
       run: |
