@@ -105,14 +105,14 @@ jobs:
         fi
 
   build:
-    runs-on: ubuntu-22.04
-    container: registry.gitlab.com/hadzhioglu/padavan-ng
-    needs: check-changes
-    # Запускаем сборку только если есть изменения в trunk ИЛИ при ручном запуске
-    if: needs.check-changes.outputs.should-build == 'true' || github.event_name == 'workflow_dispatch'
-    defaults:
-      run:
-        shell: bash
+  runs-on: ubuntu-22.04
+  container: registry.gitlab.com/hadzhioglu/padavan-ng
+  needs: check-changes
+  # Сборка только если should-build=true для ЛЮБОГО события
+  if: needs.check-changes.outputs.should-build == 'true'
+  defaults:
+    run:
+      shell: bash
     
     steps:
     - uses: actions/checkout@v4
