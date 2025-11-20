@@ -155,20 +155,17 @@ jobs:
           git -C padavan-ng checkout "$PADAVAN_COMMIT"
         fi
         
-        # Прямая загрузка toolchain
+        # Скачиваем toolchain
         cd padavan-ng
         wget -q "https://github.com/arkuid/padavan-ng-test/releases/download/latest/toolchain.tzst"
-        if [ -f "toolchain.tzst" ]; then
-          echo "✓ Toolchain downloaded successfully"
-          tar --zstd -xf toolchain.tzst
-          rm toolchain.tzst
-          echo "✓ Toolchain extracted successfully"
-          ls -la toolchain-*
-        else
-          echo "❌ Failed to download toolchain"
-          exit 1
-        fi
-        cd ..
+        tar --zstd -xf toolchain.tzst
+        rm toolchain.tzst
+        
+        # Просто проверяем что есть
+        echo "=== Contents ==="
+        ls -la
+        echo "=== Looking for toolchain directories ==="
+        find . -name "toolchain*" -type d 2>/dev/null | head -10
 
     - name: Build firmware
       run: |
