@@ -260,7 +260,7 @@ jobs:
         fi
 
     - name: Create release ZIP archive
-      uses: thedoctor0/zip-release@0.7.1
+      uses: thedoctor0/zip-release@0.7.6
       with:
         type: 'zip'
         filename: 'padavan-ng_${{ env.CONFIG_VENDOR }}_${{ env.CONFIG_FIRMWARE_PRODUCT_ID }}_${{ env.BUILD_TIMESTAMP }}.zip'
@@ -272,7 +272,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Create Release
-      uses: ncipollo/release-action@v1
+      uses: ncipollo/release-action@v1.20
       with:
         tag: build-${{ needs.check-changes.outputs.commit-date }}_${{ env.SHORT_SHA }}_${{ env.ROUTER_MODEL }}
         name: Build ${{ needs.check-changes.outputs.commit-date }} (${{ env.SHORT_SHA }}) - ${{ env.ROUTER_MODEL }}
