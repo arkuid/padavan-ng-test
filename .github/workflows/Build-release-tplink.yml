@@ -259,6 +259,18 @@ jobs:
           exit 1
         fi
 
+    - name: Create release ZIP archive
+      uses: thedoctor0/zip-release@0.7.1
+      with:
+        type: 'zip'
+        filename: 'padavan-ng_${{ env.CONFIG_VENDOR }}_${{ env.CONFIG_FIRMWARE_PRODUCT_ID }}_${{ env.BUILD_TIMESTAMP }}.zip'
+        directory: '.'
+        path: |
+          ${{ env.FW_FILE_NAME }}
+          build-${{ env.ROUTER_MODEL }}.config
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
     - name: Create Release
       uses: ncipollo/release-action@v1
       with:
@@ -272,7 +284,7 @@ jobs:
           **Build date:** ${{ env.BUILD_TIMESTAMP }}
           
           Last commit message: ${{ needs.check-changes.outputs.latest-commit-message }}
-        artifacts: ${{ env.FW_FILE_NAME }}
+        artifacts: 'padavan-ng_${{ env.CONFIG_VENDOR }}_${{ env.CONFIG_FIRMWARE_PRODUCT_ID }}_${{ env.BUILD_TIMESTAMP }}.zip'
         draft: false
         prerelease: false
       env:
