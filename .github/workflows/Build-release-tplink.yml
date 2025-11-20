@@ -117,6 +117,14 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Install necessary packages
+      run: |
+        echo "Installing zip and other necessary packages..."
+        apt-get update
+        apt-get install -y zip unzip
+        which zip
+        zip --version
+
     - name: Debug workspace structure
       run: |
         echo "=== Workspace structure ==="
