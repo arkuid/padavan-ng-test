@@ -117,14 +117,6 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install zip utility
-      run: |
-        echo "Installing zip package..."
-        apt-get update
-        apt-get install -y zip
-        echo "Zip version:"
-        zip --version
-
     - name: Debug workspace structure
       run: |
         echo "=== Workspace structure ==="
@@ -241,19 +233,14 @@ jobs:
         echo "FW_FILE_NAME=$FW_FILE_NAME" >> $GITHUB_ENV
         echo "ORIGINAL_FW_NAME=$FW_FILE_NAME" >> $GITHUB_ENV
 
-    - name: Prepare artifacts and create ZIP
+    - name: Prepare artifacts
       run: |
         ROUTER_MODEL="${{ env.ROUTER_MODEL }}"
         SHORT_SHA="${{ needs.check-changes.outputs.commit-short-sha }}"
         
-        # Создаем ZIP архив с именем по шаблону
-        ZIP_NAME="${ROUTER_MODEL}_${SHORT_SHA}.zip"
-        
-        # Копируем прошивку и создаем ZIP
+        # Копируем прошивку в рабочую директорию
         cp "padavan-ng/trunk/images/$FW_FILE_NAME" .
-        zip "$ZIP_NAME" "$FW_FILE_NAME"
         
-        echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
         echo "BUILD_TIMESTAMP=$(date '+%Y.%m.%d_%H.%M.%S')" >> $GITHUB_ENV
         echo "COMMIT_SHA=${{ needs.check-changes.outputs.commit-sha }}" >> $GITHUB_ENV
         echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_ENV
@@ -285,7 +272,7 @@ jobs:
           **Build date:** ${{ env.BUILD_TIMESTAMP }}
           
           Last commit message: ${{ needs.check-changes.outputs.latest-commit-message }}
-        artifacts: ${{ env.ZIP_NAME }},${{ env.FW_FILE_NAME }}
+        artifacts: ${{ env.FW_FILE_NAME }}
         draft: false
         prerelease: false
       env:
