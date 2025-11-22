@@ -135,6 +135,13 @@ jobs:
         if [ -d "patches" ]; then
           find patches -type f -name "*.patch" | head -10
         fi
+        echo "=== Logo directory ==="
+        if [ -d "logo" ]; then
+          ls -la logo/
+          echo "Logo files found: $(find logo -type f | wc -l)"
+        else
+          echo "No logo directory found"
+        fi
 
     - name: Set router model
       run: |
@@ -142,7 +149,7 @@ jobs:
         if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
           ROUTER_MODEL="${{ github.event.inputs.router_model }}"
         else
-          ROUTER_MODEL="tplink-c5-v4-16M"
+          ROUTER_MODEL="ac12g"
         fi
         echo "ROUTER_MODEL=$ROUTER_MODEL" >> $GITHUB_ENV
         echo "Using router model: $ROUTER_MODEL"
@@ -214,6 +221,24 @@ jobs:
           cp -rv $WORKSPACE_PATH/routers/$ROUTER_MODEL/* padavan-ng/trunk/configs/
         else
           echo "No config files found for $ROUTER_MODEL, skipping..."
+        fi
+
+        # Копируем файлы логотипов
+        if [ -d "$WORKSPACE_PATH/logo" ] && [ "$(ls -A $WORKSPACE_PATH/logo)" ]; then
+          echo "Copying logo files..."
+          echo "Source directory: $WORKSPACE_PATH/logo"
+          echo "Target directory: padavan-ng/trunk/user/www/logo"
+          
+          # Копируем все файлы из logo (директория уже существует в padavan-ng)
+          cp -rv $WORKSPACE_PATH/logo/* padavan-ng/trunk/user/www/logo/
+          
+          # Проверяем что файлы скопировались правильно
+          echo "=== Checking copied logo files ==="
+          echo "Files in target directory:"
+          ls -la padavan-ng/trunk/user/www/logo/
+          echo "Number of files copied: $(find padavan-ng/trunk/user/www/logo/ -type f | wc -l)"
+        else
+          echo "No logo files found at $WORKSPACE_PATH/logo, skipping..."
         fi
 
         # Копируем основной конфиг
