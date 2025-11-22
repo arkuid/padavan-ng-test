@@ -269,7 +269,7 @@ jobs:
     - name: Prepare artifacts
       run: |
         ROUTER_MODEL="${{ env.ROUTER_MODEL }}"
-        SHORT_SHA="${{ needs.check-changes.outputs.commit-short-sHA }}"
+        SHORT_SHA="${{ needs.check-changes.outputs.commit-short-sha }}"
         
         # Копируем прошивку в рабочую директорию
         cp "padavan-ng/trunk/images/$FW_FILE_NAME" .
