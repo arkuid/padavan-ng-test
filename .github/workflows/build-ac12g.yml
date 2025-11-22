@@ -10,9 +10,7 @@ on:
         default: "ac12g"
   schedule:
     - cron: '0 12 */7 * *'
-  push:
-    branches: [ main ]
-
+    
 permissions:
   contents: write
   actions: read
