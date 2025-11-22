@@ -149,7 +149,7 @@ jobs:
         if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
           ROUTER_MODEL="${{ github.event.inputs.router_model }}"
         else
-          ROUTER_MODEL="ac12g"
+          ROUTER_MODEL="tplink-c5-v4-16M"
         fi
         echo "ROUTER_MODEL=$ROUTER_MODEL" >> $GITHUB_ENV
         echo "Using router model: $ROUTER_MODEL"
