@@ -22,9 +22,9 @@ jobs:
     outputs:
       should-build: ${{ steps.check.outputs.should-build }}
       commit-date: ${{ steps.check.outputs.commit-date }}
-      commit-sha: ${{ steps.check-changes.outputs.commit-sha }}
-      commit-short-sha: ${{ steps.check-changes.outputs.commit-short-sha }}
-      latest-commit-message: ${{ steps.check-changes.outputs.latest-commit-message }}
+      commit-sha: ${{ steps.check.outputs.commit-sha }}
+      commit-short-sha: ${{ steps.check.outputs.commit-short-sha }}
+      latest-commit-message: ${{ steps.check.outputs.latest-commit-message }}
     steps:
     - name: Check for changes in padavan-ng trunk
       id: check
@@ -104,6 +104,7 @@ jobs:
 
   build:
     runs-on: ubuntu-22.04
+    container: registry.gitlab.com/hadzhioglu/padavan-ng
     needs: check-changes
     # Сборка только если should-build=true для ЛЮБОГО события
     if: needs.check-changes.outputs.should-build == 'true'
@@ -114,87 +115,18 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install build dependencies
+    - name: Install necessary packages
       run: |
-        echo "Installing build dependencies..."
-        sudo apt update
-        sudo apt install --no-install-recommends -y \
-          autoconf \
-          autoconf-archive \
-          automake \
-          autopoint \
-          bison \
-          build-essential \
-          bzip2 \
-          ca-certificates \
-          cmake \
-          cpio \
-          curl \
-          dos2unix \
-          doxygen \
-          fakeroot \
-          flex \
-          g++ \
-          gawk \
-          gcc \
-          gcc-multilib \
-          gettext \
-          git \
-          gperf \
-          help2man \
-          htop \
-          kmod \
-          libarchive-tools \
-          libblkid-dev \
-          libc6-dev-i386 \
-          libc-ares-dev \
-          libcurl4-openssl-dev \
-          libdevmapper-dev \
-          libev-dev \
-          libevent-dev \
-          libexif-dev \
-          libflac-dev \
-          libgmp3-dev \
-          libid3tag0-dev \
-          libidn2-dev \
-          libjpeg-dev \
-          libkeyutils-dev \
-          libltdl-dev \
-          libmpc-dev \
-          libmpfr-dev \
-          libncurses5-dev \
-          libogg-dev \
-          libsqlite3-dev \
-          libssl-dev \
-          libstdc++6 \
-          libsystemd-dev \
-          libtool \
-          libtool-bin \
-          libudev-dev \
-          libunbound-dev \
-          libvorbis-dev \
-          libxml2-dev \
-          locales \
-          make \
-          mc \
-          nano \
-          patch \
-          pkg-config \
-          ppp-dev \
-          python3 \
-          python3-docutils \
-          sshpass \
-          texinfo \
-          unzip \
-          uuid \
-          uuid-dev \
-          vim \
-          wget \
-          xxd \
-          xz-utils \
-          zip \
-          zlib1g-dev \
-          zstd
+        echo "Installing zip, gcc-multilib, libc6-dev-i386 and other necessary packages..."
+        apt-get update
+        apt-get install -y zip unzip gcc-multilib libc6-dev-i386
+        echo "=== Checking installed packages ==="
+        which zip
+        zip --version
+        which gcc
+        gcc --version | head -1
+        echo "32-bit support check:"
+        file /usr/include/stdio.h | head -1
 
     - name: Debug workspace structure
       run: |
