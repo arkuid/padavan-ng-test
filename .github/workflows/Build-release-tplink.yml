@@ -119,14 +119,7 @@ jobs:
       run: |
         echo "Installing zip, gcc-multilib, libc6-dev-i386 and other necessary packages..."
         apt-get update
-        apt-get install -y zip unzip gcc-multilib libc6-dev-i386
-        echo "=== Checking installed packages ==="
-        which zip
-        zip --version
-        which gcc
-        gcc --version | head -1
-        echo "32-bit support check:"
-        file /usr/include/stdio.h | head -1
+        apt-get install -y zip unzip gcc-multilib libc6-dev-i386 tools toolchain
 
     - name: Debug workspace structure
       run: |
