@@ -119,7 +119,7 @@ jobs:
       run: |
         echo "Installing zip, gcc-multilib, libc6-dev-i386 and other necessary packages..."
         apt-get update
-        apt-get install -y zip unzip gcc-multilib libc6-dev-i386 tools toolchain
+        apt-get install -y zip unzip gcc-multilib libc6-dev-i386 build-essential liblua5.1-0-dev luajit libluajit-5.1-dev
 
     - name: Debug workspace structure
       run: |
