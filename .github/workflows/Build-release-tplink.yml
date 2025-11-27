@@ -22,9 +22,9 @@ jobs:
     outputs:
       should-build: ${{ steps.check.outputs.should-build }}
       commit-date: ${{ steps.check.outputs.commit-date }}
-      commit-sha: ${{ steps.check.outputs.commit-sha }}
-      commit-short-sha: ${{ steps.check.outputs.commit-short-sha }}
-      latest-commit-message: ${{ steps.check.outputs.latest-commit-message }}
+      commit-sha: ${{ steps.check-changes.outputs.commit-sha }}
+      commit-short-sha: ${{ steps.check-changes.outputs.commit-short-sha }}
+      latest-commit-message: ${{ steps.check-changes.outputs.latest-commit-message }}
     steps:
     - name: Check for changes in padavan-ng trunk
       id: check
@@ -104,7 +104,6 @@ jobs:
 
   build:
     runs-on: ubuntu-22.04
-    container: registry.gitlab.com/hadzhioglu/padavan-ng
     needs: check-changes
     # Сборка только если should-build=true для ЛЮБОГО события
     if: needs.check-changes.outputs.should-build == 'true'
@@ -115,13 +114,37 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install necessary packages
+    - name: Install build dependencies
       run: |
-        echo "Installing zip and other necessary packages..."
-        apt-get update
-        apt-get install -y zip unzip
-        which zip
-        zip --version
+        echo "Installing build dependencies..."
+        apt update
+        apt install --no-install-recommends -y \
+          autoconf \
+          automake \
+          bison \
+          bzip2 \
+          ca-certificates \
+          flex \
+          g++ \
+          gawk \
+          gcc \
+          gcc-multilib \
+          git \
+          gperf \
+          help2man \
+          libc6-dev-i386 \
+          libncurses5-dev \
+          libstdc++6 \
+          libtool \
+          libtool-bin \
+          make \
+          patch \
+          texinfo \
+          unzip \
+          wget \
+          xz-utils \
+          zip \
+          zstd
 
     - name: Debug workspace structure
       run: |
